@@ -1,0 +1,232 @@
+import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, CreditCard, MessageCircle } from "lucide-react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { useMerchant } from "@/hooks/useMerchant";
+
+export const Route = createFileRoute("/_authed/panel/integraciones")({ component: IntegrationsPage });
+
+function IntegrationsPage() {
+  const { data: merchant } = useMerchant();
+  const queryClient = useQueryClient();
+  const tenant = merchant?.tenant;
+  const integration = merchant?.integration;
+
+  const [business, setBusiness] = useState({});
+  const [payments, setPayments] = useState({ mp_access_token: "" });
+  const [messaging, setMessaging] = useState({ whatsapp_api_url: "", whatsapp_token: "", whatsapp_activo: true });
+  const [saved, setSaved] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (tenant) {
+      setBusiness({
+        nombre_comercio: tenant.nombre_comercio || "",
+        rubro: tenant.rubro || "",
+        direccion: tenant.direccion || "",
+        telefono_whatsapp: tenant.telefono_whatsapp || "",
+        politica_sena: tenant.politica_sena || "",
+        horas_aviso_previo: tenant.horas_aviso_previo ?? 24,
+      });
+    }
+  }, [tenant]);
+
+  useEffect(() => {
+    if (integration) {
+      setPayments({ mp_access_token: integration.mp_access_token || "" });
+      setMessaging({
+        whatsapp_api_url: integration.whatsapp_api_url || "",
+        whatsapp_token: integration.whatsapp_token || "",
+        whatsapp_activo: integration.whatsapp_activo !== false,
+      });
+    }
+  }, [integration]);
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["merchant-access"] });
+
+  async function run(action, label) {
+    setBusy(true);
+    setSaved("");
+    try {
+      await action();
+      await refresh();
+      setSaved(label);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function saveIntegration(patch) {
+    return integration?.id
+      ? base44.entities.TenantIntegration.update(integration.id, patch)
+      : base44.entities.TenantIntegration.create({ tenant_id: tenant.id, ...patch });
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/${tenant.slug}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (!tenant) return null;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="label-micro">Configuración</p>
+        <h1 className="mt-1 text-3xl">Integraciones y datos</h1>
+      </div>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <p className="label-micro">Portal público</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <code className="rounded-lg bg-secondary px-3 py-2 text-sm">/{tenant.slug}</code>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={copyLink}>
+            {copied ? <Check className="mr-1 h-3.5 w-3.5" /> : <Copy className="mr-1 h-3.5 w-3.5" />}
+            {copied ? "Copiado" : "Copiar link"}
+          </Button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <h2 className="text-lg">Datos del comercio</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Nombre</Label>
+            <Input value={business.nombre_comercio || ""} onChange={(e) => setBusiness({ ...business, nombre_comercio: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Rubro</Label>
+            <Input value={business.rubro || ""} onChange={(e) => setBusiness({ ...business, rubro: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Dirección</Label>
+            <Input value={business.direccion || ""} onChange={(e) => setBusiness({ ...business, direccion: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>WhatsApp del local</Label>
+            <Input value={business.telefono_whatsapp || ""} onChange={(e) => setBusiness({ ...business, telefono_whatsapp: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Aviso previo de recordatorio (horas)</Label>
+            <Input
+              type="number"
+              min="1"
+              value={business.horas_aviso_previo ?? 24}
+              onChange={(e) => setBusiness({ ...business, horas_aviso_previo: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="mt-4 space-y-2">
+          <Label>Política de seña</Label>
+          <Textarea
+            rows={3}
+            value={business.politica_sena || ""}
+            onChange={(e) => setBusiness({ ...business, politica_sena: e.target.value })}
+          />
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button
+            className="rounded-full"
+            disabled={busy}
+            onClick={() =>
+              run(
+                () =>
+                  base44.entities.Tenant.update(tenant.id, {
+                    ...business,
+                    horas_aviso_previo: Number(business.horas_aviso_previo) || 24,
+                  }),
+                "Datos guardados",
+              )
+            }
+          >
+            Guardar datos
+          </Button>
+          {saved === "Datos guardados" ? <span className="text-xs text-primary">{saved}</span> : null}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-lg">Mercado Pago</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Con el access token de tu cuenta cobramos las señas de tus turnos. Sin token, las reservas se confirman sin
+          seña online.
+        </p>
+        <div className="mt-4 space-y-2">
+          <Label>Access token de producción</Label>
+          <Input
+            type="password"
+            placeholder="APP_USR-…"
+            value={payments.mp_access_token}
+            onChange={(e) => setPayments({ ...payments, mp_access_token: e.target.value })}
+          />
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button
+            className="rounded-full"
+            disabled={busy}
+            onClick={() => run(() => saveIntegration({ mp_access_token: payments.mp_access_token.trim() }), "Mercado Pago actualizado")}
+          >
+            Guardar token
+          </Button>
+          {saved === "Mercado Pago actualizado" ? <span className="text-xs text-primary">{saved}</span> : null}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-lg">Recordatorios por WhatsApp</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pegá el endpoint de envío de tu proveedor (Evolution API, Meta Cloud API a través de un adaptador o Twilio).
+          Recibe <code className="rounded bg-secondary px-1">{"{ number, text }"}</code>.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>URL del webhook de envío</Label>
+            <Input
+              placeholder="https://tu-proveedor/message/sendText/local"
+              value={messaging.whatsapp_api_url}
+              onChange={(e) => setMessaging({ ...messaging, whatsapp_api_url: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Token / API key</Label>
+            <Input
+              type="password"
+              value={messaging.whatsapp_token}
+              onChange={(e) => setMessaging({ ...messaging, whatsapp_token: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-border px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">Enviar recordatorios</p>
+            <p className="text-xs text-muted-foreground">Confirmación, aviso previo y recordatorio 2 horas antes.</p>
+          </div>
+          <Switch
+            checked={messaging.whatsapp_activo}
+            onCheckedChange={(checked) => setMessaging({ ...messaging, whatsapp_activo: checked })}
+          />
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button className="rounded-full" disabled={busy} onClick={() => run(() => saveIntegration(messaging), "Mensajería actualizada")}>
+            Guardar mensajería
+          </Button>
+          {saved === "Mensajería actualizada" ? <span className="text-xs text-primary">{saved}</span> : null}
+        </div>
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,81 @@
+import { Check, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
+
+const ESTADOS = {
+  pendiente_pago: { label: "Pendiente de seña", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  confirmado: { label: "Confirmado", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  cancelado: { label: "Cancelado", className: "border-border bg-secondary text-muted-foreground" },
+  expirado: { label: "Expirado", className: "border-red-200 bg-red-50 text-red-700" },
+};
+
+export default function AppointmentList({ appointments, onChangeEstado, emptyText }) {
+  if (!appointments.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border px-5 py-10 text-center text-sm text-muted-foreground">
+        {emptyText}
+      </div>
+    );
+  }
+
+  const groups = appointments.reduce((acc, appointment) => {
+    const key = new Date(new Date(appointment.fecha_hora_inicio).getTime() - 3 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    acc[key] = acc[key] || [];
+    acc[key].push(appointment);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-6">
+      {Object.entries(groups).map(([dateKey, items]) => (
+        <div key={dateKey}>
+          <p className="label-micro">{formatDate(`${dateKey}T12:00:00-03:00`)}</p>
+          <div className="mt-2 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+            {items.map((appointment) => {
+              const estado = ESTADOS[appointment.estado] || ESTADOS.cancelado;
+              return (
+                <div key={appointment.id} className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+                  <div className="w-14 shrink-0 text-sm font-medium tabular-nums">
+                    {formatDateTime(appointment.fecha_hora_inicio).split(", ").pop()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{appointment.cliente_nombre}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {appointment.servicio_nombre || "Servicio"} · {appointment.cliente_telefono}
+                      {appointment.monto_sena > 0 ? ` · seña ${formatMoney(appointment.monto_sena)}` : ""}
+                    </p>
+                  </div>
+                  <span className={`rounded-full border px-2.5 py-1 text-[11px] ${estado.className}`}>{estado.label}</span>
+                  {appointment.estado === "pendiente_pago" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-full"
+                      onClick={() => onChangeEstado(appointment, "confirmado")}
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" />
+                      Confirmar
+                    </Button>
+                  ) : null}
+                  {appointment.estado === "confirmado" || appointment.estado === "pendiente_pago" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 rounded-full text-muted-foreground"
+                      onClick={() => onChangeEstado(appointment, "cancelado")}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Cancelar
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
