@@ -5,10 +5,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import BlocksSection from "@/components/admin/BlocksSection";
 import { useMerchant } from "@/hooks/useMerchant";
-import { unwrapDb } from "@/lib/db.client";
+import { unwrapDb } from "@/lib/db-errors";
 import { DIAS } from "@/lib/format";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 export const Route = createFileRoute("/_authed/panel/horarios")({ component: SchedulePage });
 
@@ -17,7 +18,7 @@ function SchedulePage() {
   const tenantId = merchant?.tenant?.id;
   const queryClient = useQueryClient();
 
-  const { data: schedules = [], isLoading } = useQuery({
+  const { data: schedules = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["schedules", tenantId],
     queryFn: async () => unwrapDb(await getSupabase().from("schedules").select("*").eq("tenant_id", tenantId).limit(100)),
     enabled: Boolean(tenantId),
@@ -63,6 +64,13 @@ function SchedulePage() {
         <div className="rounded-2xl border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
           Cargando horarios…
         </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-dashed border-destructive/40 px-5 py-10 text-center text-sm text-destructive">
+          No pudimos cargar los horarios ({error?.message}).{" "}
+          <button type="button" className="underline" onClick={() => refetch()}>
+            Reintentar
+          </button>
+        </div>
       ) : (
         <div className="space-y-2">
           {DIAS.map((nombre, dia) => {
@@ -87,16 +95,26 @@ function SchedulePage() {
                     {intervals.map((interval) => (
                       <div key={interval.id} className="flex flex-wrap items-center gap-2">
                         <Input
+                          key={`${interval.id}-i-${interval.hora_inicio}`}
                           type="time"
-                          value={String(interval.hora_inicio).slice(0, 5)}
-                          onChange={(event) => updateInterval(interval.id, { hora_inicio: event.target.value })}
+                          aria-label={`${nombre}: hora de inicio`}
+                          defaultValue={String(interval.hora_inicio).slice(0, 5)}
+                          onBlur={(event) => {
+                            const value = event.target.value;
+                            if (value && value !== String(interval.hora_inicio).slice(0, 5)) updateInterval(interval.id, { hora_inicio: value });
+                          }}
                           className="h-9 w-28"
                         />
                         <span className="text-xs text-muted-foreground">a</span>
                         <Input
+                          key={`${interval.id}-f-${interval.hora_fin}`}
                           type="time"
-                          value={String(interval.hora_fin).slice(0, 5)}
-                          onChange={(event) => updateInterval(interval.id, { hora_fin: event.target.value })}
+                          aria-label={`${nombre}: hora de fin`}
+                          defaultValue={String(interval.hora_fin).slice(0, 5)}
+                          onBlur={(event) => {
+                            const value = event.target.value;
+                            if (value && value !== String(interval.hora_fin).slice(0, 5)) updateInterval(interval.id, { hora_fin: value });
+                          }}
                           className="h-9 w-28"
                         />
                         <Switch
@@ -120,6 +138,8 @@ function SchedulePage() {
           })}
         </div>
       )}
+
+      <BlocksSection tenantId={tenantId} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 ## Hecho — pasos 1 y 2
 - Config: `vite.config.js` (TanStack Start + Nitro), `package.json` sin dependencias de Base44/Cloudflare, `.env.example`.
-- Supabase: `src/lib/supabase.client.js` (navegador, RLS) y `src/lib/supabase.server.js` (sesión por cookies + service role).
+- Supabase: `src/lib/supabase-browser.js` (navegador, RLS) y `src/lib/supabase.server.js` (sesión por cookies + service role).
 - Auth de servidor: `src/lib/auth-middleware.js` (`requireUser`, `requireSuperAdmin`, TOTP opcional con `REQUIRE_ADMIN_MFA`).
 - Server functions reescritas: `booking`, `billing`, `merchant`, `superadmin` (+ `saveTenantSettings` y `saveIntegration` nuevas).
 - Servidor: `appointments.server`, `automations.server`, `whatsapp.server`, `mp-signature.server`, `safe-url.server`.
@@ -10,7 +10,7 @@
 - Renombrados (el export los había alterado): `__root.jsx`, `useMerchant.js`, `eslint.config.js`, `ui/accordion.jsx`.
 
 ## Hecho — paso 3: autenticación con Supabase Auth
-- `src/lib/AuthContext.jsx` (sesión en el navegador; `user.role === "admin"` = super admin, igual que antes) y `src/lib/auth.client.js`.
+- `src/lib/AuthContext.jsx` (sesión en el navegador; `user.role === "admin"` = super admin, igual que antes) y `src/lib/auth-browser.js`.
 - Pantallas en español: login (email + contraseña y Google), registro con código de 6 dígitos por email,
   recuperar contraseña, elegir contraseña (también para la invitación del comercio), `/auth/confirm` (links de email y Google).
 - `/mfa`: TOTP solo para el super admin (QR la primera vez, luego código). `AuthGate` lo obliga antes de entrar a `/admin`.
@@ -30,7 +30,7 @@
 
 ## Hecho — paso 4: pantallas del panel y del admin sobre Supabase
 - `panel/index`, `servicios`, `horarios`, `abono` y `admin` leen y escriben con `getSupabase()` (RLS en la base). Los errores
-  de la base se muestran como aviso (`src/lib/db.client.js`).
+  de la base se muestran como aviso (`src/lib/db-errors.js`).
 - `panel/integraciones` usa `saveTenantSettings` y `saveIntegration`: los tokens son de solo escritura
   (campo vacío = no cambiar; hay botones "Desconectar" y "Quitar token"); el token de MP se valida contra Mercado Pago al guardar.
 - Agenda: ahora trae los turnos del mes en curso en adelante (antes traía los 200 más viejos).
@@ -45,3 +45,12 @@
 - `src/routeTree.gen.ts` no está en el zip: lo genera TanStack Router la primera vez que corrés `npm run dev` o `npm run build`.
 - Revisado sin ejecutar: sintaxis de los 125 archivos JS/JSX, imports resueltos (respetando mayúsculas) y nombres no definidos.
   No se compiló ni se probó contra Supabase: los primeros errores reales aparecerán en `npm run dev`.
+
+## Auditoría (noviembre 2026)
+- Build: los módulos de navegador se renombraron a `*-browser.js` / `db-errors.js`. El patrón `*.client.*` lo bloquea el
+  import-protection de TanStack Start cuando el SSR los importa, y eso rompía `npm run build`.
+- `package.json` declara `nitro`, `@supabase/ssr` y `@supabase/supabase-js`, y hay `package-lock.json`.
+- Seguridad: se eliminó `runMyAutomations` (cualquier usuario logueado disparaba las automatizaciones de toda la plataforma).
+  Autorizar el débito ya no reactiva una cuenta suspendida. La seña se valida igual en el webhook y en `/pago/:codigo`.
+- Agenda: bloqueos (`blocks`, migración 004), slots de a 30 min como máximo, anticipación mínima de 15 min, horizonte de 60 días
+  y máximo 2 reservas impagas por teléfono. Los teléfonos se guardan en formato WhatsApp (549…), ver `src/lib/phone.js`.

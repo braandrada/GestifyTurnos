@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, SubmitButton } from "@/components/auth/parts";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { authMessage, signOut } from "@/lib/auth.client";
+import { authMessage, signOut } from "@/lib/auth-browser";
 import { safeReturnTo } from "@/lib/authReturnTo";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 /**
  * Página /mfa: autenticación en dos pasos (TOTP) del super admin.

@@ -6,7 +6,7 @@ import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/co
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
-import { resendSignupCode, signUp, verifySignupCode } from "@/lib/auth.client";
+import { resendSignupCode, signUp, verifySignupCode } from "@/lib/auth-browser";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 const MIN_PASSWORD = 8;

@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarCheck, CalendarX2, Clock, Loader2, MapPin } from "lucide-react";
+import { CalendarCheck, CalendarX2, Clock, Loader2, MapPin, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getBookingStatus } from "@/lib/booking.functions";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { whatsAppLink } from "@/lib/phone";
 
 export const Route = createFileRoute("/pago/$codigo")({
   head: () => ({ meta: [{ title: "Estado de tu turno" }] }),
@@ -13,7 +14,7 @@ export const Route = createFileRoute("/pago/$codigo")({
 function PaymentStatusPage() {
   const { codigo } = Route.useParams();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["booking-status", codigo],
     queryFn: () => getBookingStatus({ data: { codigo } }),
     refetchInterval: (query) => (query.state.data?.estado === "pendiente_pago" ? 4000 : false),
@@ -23,6 +24,20 @@ function PaymentStatusPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+        <div className="max-w-sm text-center">
+          <h1 className="text-3xl">No pudimos consultar tu turno</h1>
+          <p className="mt-3 text-sm text-muted-foreground">Revisá tu conexión. Tu reserva no se pierde por recargar esta página.</p>
+          <Button className="mt-6 rounded-full" onClick={() => refetch()} disabled={isFetching}>
+            Reintentar
+          </Button>
+        </div>
       </div>
     );
   }
@@ -44,6 +59,12 @@ function PaymentStatusPage() {
   const confirmado = data.estado === "confirmado";
   const pendiente = data.estado === "pendiente_pago";
   const cancelado = data.estado === "cancelado" || data.estado === "expirado";
+  const contactoLocal = whatsAppLink(
+    data.comercio.telefono_whatsapp,
+    `Hola ${data.comercio.nombre_comercio}! Soy ${data.cliente_nombre}, tengo un turno de ${data.servicio_nombre || "servicio"} el ${formatDateTime(
+      data.fecha_hora_inicio,
+    )}.`,
+  );
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
@@ -107,6 +128,14 @@ function PaymentStatusPage() {
               <Link to="/$slug" params={{ slug: data.comercio.slug }}>
                 Reservar otro turno
               </Link>
+            </Button>
+          ) : null}
+          {contactoLocal ? (
+            <Button asChild variant="outline" className="rounded-full">
+              <a href={contactoLocal} target="_blank" rel="noreferrer">
+                <MessageCircle className="mr-1 h-4 w-4" />
+                Escribir al local por WhatsApp
+              </a>
             </Button>
           ) : null}
           <Button asChild variant="ghost" className="rounded-full">

@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
-import { runAutomations } from "@/lib/automations.server";
 import { platformToken } from "@/lib/billing.server";
 import { getMpUser } from "@/lib/mercadopago.server";
 import { assertSafeWebhookUrl } from "@/lib/safe-url.server";
@@ -159,7 +158,3 @@ export const saveIntegration = createServerFn({ method: "POST" })
     );
     return { ok: true, integration: integrationStatus(saved) };
   });
-
-export const runMyAutomations = createServerFn({ method: "POST" })
-  .middleware([requireUser])
-  .handler(async () => runAutomations());

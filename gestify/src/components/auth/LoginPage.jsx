@@ -4,7 +4,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signInWithPassword } from "@/lib/auth.client";
+import { signInWithPassword } from "@/lib/auth-browser";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 // Página /login. ?returnTo= es adonde va la persona después de ingresar (sin destino, al panel).

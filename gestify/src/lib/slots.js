@@ -35,27 +35,42 @@ export function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
-/** Intervalos ocupados por turnos que bloquean la agenda */
-export function busyIntervals(appointments, now = new Date()) {
-  return appointments
+/**
+ * Intervalos ocupados: turnos vivos + bloqueos manuales del comercio.
+ * Misma regla que la base (public_get_busy_slots): un pendiente sin vencimiento cargado ocupa el horario.
+ */
+export function busyIntervals(appointments, now = new Date(), blocks = []) {
+  const fromAppointments = appointments
     .filter((appointment) => {
       if (appointment.estado === "confirmado") return true;
       if (appointment.estado !== "pendiente_pago") return false;
-      return appointment.expira_pago_en && new Date(appointment.expira_pago_en) > now;
+      return !appointment.expira_pago_en || new Date(appointment.expira_pago_en) > now;
     })
     .map((appointment) => ({
       start: new Date(appointment.fecha_hora_inicio),
       end: new Date(appointment.fecha_hora_fin),
     }));
+  const fromBlocks = blocks.map((block) => ({ start: new Date(block.inicio), end: new Date(block.fin) }));
+  return [...fromAppointments, ...fromBlocks];
 }
 
 /**
- * Cruza los horarios del día con los turnos existentes y devuelve los inicios libres.
+ * Cada cuántos minutos se ofrece un inicio de turno. Servicios cortos avanzan de a su duración;
+ * los largos, de a 30 min (si no, uno de 90 min solo ofrecería 9:00, 10:30, 12:00…).
  */
-export function buildSlots({ dateKey, durationMinutes, schedules, appointments, now = new Date() }) {
+export function slotStepMinutes(durationMinutes) {
+  return Math.min(Number(durationMinutes) || 30, 30);
+}
+
+/**
+ * Cruza los horarios del día con los turnos y bloqueos existentes y devuelve los inicios libres.
+ * `minStart`: no se ofrecen turnos que empiecen antes (anticipación mínima).
+ */
+export function buildSlots({ dateKey, durationMinutes, schedules, appointments, blocks = [], now = new Date(), minStart = now }) {
   const weekday = weekdayOf(dateKey);
-  const busy = busyIntervals(appointments, now);
+  const busy = busyIntervals(appointments, now, blocks);
   const duration = Number(durationMinutes) || 30;
+  const step = slotStepMinutes(duration);
   const slots = [];
 
   schedules
@@ -63,10 +78,10 @@ export function buildSlots({ dateKey, durationMinutes, schedules, appointments, 
     .forEach((schedule) => {
       const dayStart = toInstant(dateKey, schedule.hora_inicio);
       const dayEnd = toInstant(dateKey, schedule.hora_fin);
-      for (let start = dayStart.getTime(); start + duration * 60000 <= dayEnd.getTime(); start += duration * 60000) {
+      for (let start = dayStart.getTime(); start + duration * 60000 <= dayEnd.getTime(); start += step * 60000) {
         const slotStart = new Date(start);
         const slotEnd = new Date(start + duration * 60000);
-        if (slotStart <= now) continue;
+        if (slotStart <= now || slotStart < minStart) continue;
         const taken = busy.some((interval) => overlaps(slotStart, slotEnd, interval.start, interval.end));
         if (taken) continue;
         slots.push({ start: slotStart.toISOString(), label: timeKeyOf(slotStart) });

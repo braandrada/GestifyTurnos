@@ -41,12 +41,25 @@ export async function createPreference({ accessToken, tenant, service, appointme
   return { id: json.id, init_point: json.init_point || json.sandbox_init_point };
 }
 
-export async function findApprovedPayment({ accessToken, externalReference }) {
-  const url = `${MP_API}/v1/payments/search?external_reference=${encodeURIComponent(externalReference)}`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+/**
+ * ¿Este pago de Mercado Pago es la seña aprobada de este turno? Única fuente de verdad para el webhook
+ * y para la pantalla de estado: aprobado, en pesos, con la referencia del turno y monto que cubra la seña.
+ */
+export function isValidDepositPayment(payment, appointment) {
+  if (!payment || !appointment) return false;
+  if (payment.status !== "approved") return false;
+  if (String(payment.external_reference || "") !== String(appointment.id)) return false;
+  if (payment.currency_id && payment.currency_id !== "ARS") return false;
+  return Number(payment.transaction_amount) + 0.001 >= Number(appointment.monto_sena);
+}
+
+/** Busca la seña aprobada de un turno (cuando el cliente vuelve de MP antes de que llegue el webhook). */
+export async function findApprovedPayment({ accessToken, appointment }) {
+  const url = `${MP_API}/v1/payments/search?external_reference=${encodeURIComponent(appointment.id)}`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(8000) });
   if (!response.ok) return null;
   const json = await response.json().catch(() => ({}));
-  const approved = (json.results || []).find((payment) => payment.status === "approved");
+  const approved = (json.results || []).find((payment) => isValidDepositPayment(payment, appointment));
   return approved ? { id: String(approved.id), status: approved.status } : null;
 }
 

@@ -4,6 +4,7 @@ import { appOrigin } from "@/lib/app-url.server";
 import { confirmAppointment } from "@/lib/appointments.server";
 import { formatDateTime } from "@/lib/format";
 import { createPreference, findApprovedPayment } from "@/lib/mercadopago.server";
+import { toWhatsAppNumber } from "@/lib/phone";
 import { addMinutes, buildSlots, dateKeyOf, toInstant } from "@/lib/slots";
 import { dbFail, supabaseAdmin, unwrap } from "@/lib/supabase.server";
 import { sendWhatsAppMessage } from "@/lib/whatsapp.server";
@@ -49,7 +50,7 @@ async function loadDay(tenantId, dateKey) {
   const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
   const db = supabaseAdmin();
 
-  const [schedules, appointments] = await Promise.all([
+  const [schedules, appointments, blocks] = await Promise.all([
     db.from("schedules").select("dia_semana, hora_inicio, hora_fin, activo").eq("tenant_id", tenantId).eq("activo", true),
     db
       .from("appointments")
@@ -58,8 +59,46 @@ async function loadDay(tenantId, dateKey) {
       .in("estado", ["confirmado", "pendiente_pago"])
       .lt("fecha_hora_inicio", dayEnd.toISOString())
       .gt("fecha_hora_fin", dayStart.toISOString()),
+    db
+      .from("blocks")
+      .select("inicio, fin")
+      .eq("tenant_id", tenantId)
+      .lt("inicio", dayEnd.toISOString())
+      .gt("fin", dayStart.toISOString()),
   ]);
-  return { schedules: unwrap(schedules), appointments: unwrap(appointments) };
+  return { schedules: unwrap(schedules), appointments: unwrap(appointments), blocks: blocksOrEmpty(blocks) };
+}
+
+// La tabla `blocks` llega con la migración 004. Si todavía no se corrió, la agenda sigue funcionando sin bloqueos.
+function blocksOrEmpty(response) {
+  if (response.error && ["42P01", "PGRST205"].includes(response.error.code)) {
+    console.warn("[booking] falta la tabla blocks: corré supabase/migrations/004_bloqueos_y_seguridad.sql");
+    return [];
+  }
+  return unwrap(response);
+}
+
+// Reglas de la reserva pública.
+const MAX_DAYS_AHEAD = 60; // no se reserva más allá de esto
+const MIN_LEAD_MINUTES = 15; // anticipación mínima (también deja margen para pagar la seña)
+const MAX_PENDING_PER_PHONE = 2; // reservas impagas simultáneas por teléfono y comercio (anti-spam)
+
+function slotsForDay(dateKey, service, day) {
+  if (!day) return [];
+  return buildSlots({
+    dateKey,
+    durationMinutes: service.duracion_minutos,
+    schedules: day.schedules,
+    appointments: day.appointments,
+    blocks: day.blocks,
+    minStart: new Date(Date.now() + MIN_LEAD_MINUTES * 60000),
+  });
+}
+
+function withinHorizon(dateKey) {
+  const today = dateKeyOf(new Date().toISOString());
+  const limit = dateKeyOf(new Date(Date.now() + MAX_DAYS_AHEAD * 86400000).toISOString());
+  return dateKey >= today && dateKey <= limit;
 }
 
 async function loadService(tenantId, serviceId) {
@@ -117,22 +156,16 @@ export const getAvailability = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    if (!withinHorizon(data.dateKey)) return { slots: [] };
+
     const tenant = await loadBySlug(data.slug);
-    if (!tenant) return { slots: [] };
+    if (!tenant || tenant.activo === false) return { slots: [] };
 
     const service = await loadService(tenant.id, data.serviceId);
-    if (!service) return { slots: [] };
+    if (!service || service.activo === false) return { slots: [] };
 
     const day = await loadDay(tenant.id, data.dateKey);
-    if (!day) return { slots: [] };
-
-    const slots = buildSlots({
-      dateKey: data.dateKey,
-      durationMinutes: service.duracion_minutos,
-      schedules: day.schedules,
-      appointments: day.appointments,
-    });
-    return { slots };
+    return { slots: slotsForDay(data.dateKey, service, day) };
   });
 
 export const createBooking = createServerFn({ method: "POST" })
@@ -141,8 +174,8 @@ export const createBooking = createServerFn({ method: "POST" })
       slug: z.string().min(1).max(80),
       serviceId: z.string().min(1).max(80),
       startIso: z.string().min(10).max(40),
-      clienteNombre: z.string().min(2).max(120),
-      clienteTelefono: z.string().min(6).max(40),
+      clienteNombre: z.string().trim().min(2, "Ingresá tu nombre").max(120),
+      clienteTelefono: z.string().trim().min(6, "Ingresá tu teléfono").max(40),
       // se ignora: la URL de retorno sale de APP_URL, no de lo que mande el navegador
       origin: z.string().max(200).optional(),
     }),
@@ -160,24 +193,33 @@ export const createBooking = createServerFn({ method: "POST" })
     const service = await loadService(tenant.id, data.serviceId);
     if (!service || service.activo === false) throw new Error("El servicio seleccionado no está disponible");
 
+    const telefono = toWhatsAppNumber(data.clienteTelefono);
+    if (!telefono) throw new Error("Revisá el teléfono: ingresalo con código de área, por ejemplo 11 5555 5555.");
+
     const start = new Date(data.startIso);
     if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
       throw new Error("El horario elegido ya no está disponible");
     }
     const end = addMinutes(start, Number(service.duracion_minutos) || 30);
+    const dateKey = dateKeyOf(start.toISOString());
+    if (!withinHorizon(dateKey)) throw new Error(`Solo se puede reservar hasta ${MAX_DAYS_AHEAD} días adelante.`);
+
+    await db.rpc("expire_pending_appointments");
+
+    // Anti-spam: un mismo teléfono no puede tener muchos horarios "congelados" sin pagar en el mismo comercio.
+    const pending = await db
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenant.id)
+      .eq("cliente_telefono", telefono)
+      .eq("estado", "pendiente_pago");
+    if ((pending.count ?? 0) >= MAX_PENDING_PER_PHONE) {
+      throw new Error("Ya tenés reservas esperando el pago de la seña. Completá o esperá que venzan para reservar otra.");
+    }
 
     // El horario tiene que ser uno de los que la agenda realmente ofrece (no cualquier hora inventada).
-    await db.rpc("expire_pending_appointments");
-    const dateKey = dateKeyOf(start.toISOString());
     const day = await loadDay(tenant.id, dateKey);
-    const offered = day
-      ? buildSlots({
-          dateKey,
-          durationMinutes: service.duracion_minutos,
-          schedules: day.schedules,
-          appointments: day.appointments,
-        })
-      : [];
+    const offered = slotsForDay(dateKey, service, day);
     if (!offered.some((slot) => slot.start === start.toISOString())) {
       throw new Error("Ese horario ya no está disponible. Elegí otro por favor.");
     }
@@ -196,8 +238,8 @@ export const createBooking = createServerFn({ method: "POST" })
         tenant_id: tenant.id,
         service_id: service.id,
         servicio_nombre: service.nombre,
-        cliente_nombre: data.clienteNombre.trim(),
-        cliente_telefono: data.clienteTelefono.trim(),
+        cliente_nombre: data.clienteNombre,
+        cliente_telefono: telefono,
         fecha_hora_inicio: start.toISOString(),
         fecha_hora_fin: end.toISOString(),
         estado: cobraSena ? "pendiente_pago" : "confirmado",
@@ -262,10 +304,9 @@ export const getBookingStatus = createServerFn({ method: "POST" })
     // Si volvió de Mercado Pago y el webhook todavía no llegó, se consulta el pago directamente.
     let estado = appointment.estado;
     if (estado === "pendiente_pago" && appointment.mp_preference_id && integration?.mp_access_token) {
-      const payment = await findApprovedPayment({
-        accessToken: integration.mp_access_token,
-        externalReference: appointment.id,
-      });
+      const payment = await findApprovedPayment({ accessToken: integration.mp_access_token, appointment }).catch(
+        () => null,
+      );
       if (payment) {
         const result = await confirmAppointment({ appointment, paymentId: payment.id, tenant });
         if (result.confirmed) estado = "confirmado";

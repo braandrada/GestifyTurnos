@@ -1,8 +1,10 @@
+import { toWhatsAppNumber } from "@/lib/phone";
 import { assertSafeWebhookUrl } from "@/lib/safe-url.server";
 import { supabaseAdmin } from "@/lib/supabase.server";
 
+// Formato internacional de WhatsApp (549…). Turnos viejos con teléfonos raros: se mandan solo los dígitos.
 function normalizePhone(phone) {
-  return String(phone || "").replace(/[^\d+]/g, "");
+  return toWhatsAppNumber(phone) || String(phone || "").replace(/\D/g, "");
 }
 
 /**

@@ -10,9 +10,9 @@ import TenantsTable from "@/components/superadmin/TenantsTable";
 import RegisterTenantModal from "@/components/superadmin/RegisterTenantModal";
 import RecordPaymentModal from "@/components/superadmin/RecordPaymentModal";
 import { provisionTenant, registerSubscriptionPayment, runPlatformAutomations, setSubscriptionState } from "@/lib/superadmin.functions";
-import { unwrapDb } from "@/lib/db.client";
+import { unwrapDb } from "@/lib/db-errors";
 import { formatDate, formatMoney } from "@/lib/format";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 export const Route = createFileRoute("/_authed/admin")({ component: SuperAdminDashboard });
 
@@ -171,9 +171,22 @@ function SuperAdminDashboard() {
           </p>
         ) : null}
 
+        {tenantsQuery.isError || subscriptionsQuery.isError || paymentsQuery.isError ? (
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            No pudimos cargar todos los datos de la plataforma.{" "}
+            <button type="button" className="underline" onClick={refreshAll}>
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+
         <section>
           <h2 className="mb-3 text-lg">Comercios</h2>
-          <TenantsTable rows={rows} onPay={(tenant, subscription) => setPaymentTarget({ tenant, subscription })} onToggle={toggleEstado} />
+          {tenantsQuery.isLoading ? (
+            <div className="rounded-2xl border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">Cargando comercios…</div>
+          ) : (
+            <TenantsTable rows={rows} onPay={(tenant, subscription) => setPaymentTarget({ tenant, subscription })} onToggle={toggleEstado} />
+          )}
         </section>
 
         <section>
