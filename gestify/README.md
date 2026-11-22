@@ -18,4 +18,4 @@ npm run dev                                               # http://localhost:300
 2. Registrarte y volverte super admin: `update public.profiles set tipo_usuario = 'super_admin' where email = 'TU_EMAIL';`
 3. Cargar las variables de `.env.example` en Vercel (Settings > Environment Variables) y desplegar desde GitHub.
 
-Estado de la migración y tareas pendientes: ver `MIGRATION.md`.
+Despliegue paso a paso: `DEPLOY.md`. Estado de la migración: `MIGRATION.md`.

@@ -1,30 +1,58 @@
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
-import { currentUrl } from "@/lib/authReturnTo";
+import { createContext, useContext, useEffect, useMemo } from "react";
+import { signOut } from "@/lib/auth.client";
+import { currentPath } from "@/lib/authReturnTo";
+import { getSupabase } from "@/lib/supabase.client";
+
+const isNoSession = (error) =>
+  error?.name === "AuthSessionMissingError" || error?.status === 401 || error?.status === 403 || /session missing/i.test(error?.message ?? "");
 
 /**
- * The visitor, resolved once per page load and cached in the router's QueryClient:
- * the login gate (src/components/auth/AuthGate.jsx) reads it with
- * `context.queryClient.ensureQueryData(authQuery)`, components with `useAuth()`.
- * Resolves to `{ user, error }`: an anonymous visitor (no token, or a 401/403) is `{ user: null, error: null }`.
- * Anything else, an outage (429, 503) or a request that never got an answer, rejects instead,
- * so it is never cached as "signed out" and the next read asks again.
+ * El visitante, resuelto una vez por carga de página y cacheado en el QueryClient del router.
+ * Resuelve a `{ user, error }`: sin sesión es `{ user: null, error: null }`. Una caída de red u otro
+ * error rechaza la promesa en vez de cachearse como "sin sesión".
+ *
+ * user = { id, email, full_name, tipo_usuario, tenant_id, role, aal, mfaVerified }
+ *  - role "admin" = super admin (se mantiene el nombre que ya usan PanelShell y admin.jsx)
+ *  - mfaVerified: solo para el super admin, true si ya validó su código TOTP en esta sesión
  */
 export const authQuery = queryOptions({
   queryKey: ["auth", "me"],
   queryFn: async () => {
-    // No token means no session; /me could only answer 401.
-    if (!base44.auth.hasToken()) return { user: null, error: null };
-    try {
-      return { user: await base44.auth.me(), error: null };
-    } catch (err) {
-      if (err?.data?.extra_data?.reason === "user_not_registered") {
-        return { user: null, error: { type: "user_not_registered", message: "Not registered" } };
-      }
-      if (err?.status === 401 || err?.status === 403) return { user: null, error: null };
-      throw err;
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      if (isNoSession(error)) return { user: null, error: null };
+      throw error;
     }
+    if (!data?.user) return { user: null, error: null };
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, tenant_id, tipo_usuario")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    const isAdmin = profile?.tipo_usuario === "super_admin";
+    let aal = null;
+    if (isAdmin) {
+      const result = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      aal = result.data?.currentLevel ?? null;
+    }
+
+    return {
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        full_name: profile?.full_name || data.user.user_metadata?.full_name || "",
+        tipo_usuario: profile?.tipo_usuario || "comerciante",
+        tenant_id: profile?.tenant_id || null,
+        role: isAdmin ? "admin" : "user",
+        aal,
+        mfaVerified: isAdmin ? aal === "aal2" : null,
+      },
+      error: null,
+    };
   },
   staleTime: Infinity,
   retry: false,
@@ -33,29 +61,36 @@ export const authQuery = queryOptions({
 const AuthContext = createContext(null);
 
 /**
- * Client-side session state. The server renders every page anonymously and the
- * query only runs in the browser after hydration, so the first client render
- * matches the server markup. Gate user-specific UI on `isLoadingAuth`.
+ * Estado de sesión en el navegador. El servidor renderiza todo como anónimo y la consulta corre
+ * recién tras la hidratación, así el primer render coincide con el HTML del servidor.
  */
 export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
   const { data, error, isPending } = useQuery(authQuery);
+
+  // Si la sesión se cierra en otra pestaña, esta también se entera.
+  useEffect(() => {
+    const { data: subscription } = getSupabase().auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") queryClient.setQueryData(authQuery.queryKey, { user: null, error: null });
+    });
+    return () => subscription.subscription.unsubscribe();
+  }, [queryClient]);
 
   const value = useMemo(
     () => ({
       user: data?.user ?? null,
       isAuthenticated: !!data?.user,
       isLoadingAuth: isPending,
-      authError: data?.error ?? (error ? { type: "unknown", message: error.message ?? "Failed to load session" } : null),
+      authError: data?.error ?? (error ? { type: "unknown", message: error.message ?? "No pudimos cargar tu sesión" } : null),
       refresh: () => queryClient.fetchQuery({ ...authQuery, staleTime: 0 }),
-      logout: () => {
+      logout: async () => {
         queryClient.setQueryData(authQuery.queryKey, { user: null, error: null });
-        base44.auth.logout(window.location.origin);
+        await signOut();
+        window.location.assign("/");
       },
-      // Full-page sign-in: /login with the current page as the way back. A hard
-      // navigation on purpose — on an app served behind the platform login the
-      // platform answers /login itself; an app with its own auth pages serves its /login route.
-      navigateToLogin: () => base44.auth.redirectToLogin(currentUrl()),
+      navigateToLogin: () => {
+        window.location.assign(`/login?returnTo=${encodeURIComponent(currentPath())}`);
+      },
     }),
     [data, error, isPending, queryClient],
   );
@@ -65,6 +100,6 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  if (!ctx) throw new Error("useAuth debe usarse dentro de <AuthProvider>");
   return ctx;
 }

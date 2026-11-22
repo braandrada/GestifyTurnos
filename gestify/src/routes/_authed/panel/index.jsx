@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Clock3, Wallet } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 import { useMerchant } from "@/hooks/useMerchant";
 import AppointmentList from "@/components/admin/AppointmentList";
 import SubscriptionBanner from "@/components/admin/SubscriptionBanner";
+import { unwrapDb } from "@/lib/db.client";
+import { getSupabase } from "@/lib/supabase.client";
 import { dateKeyOf } from "@/lib/slots";
 import { formatMoney } from "@/lib/format";
 
@@ -17,19 +19,31 @@ function Dashboard() {
 
   const { data: appointments = [], isLoading } = useQuery({
     queryKey: ["appointments", tenantId],
+    // Turnos del mes en curso en adelante: alcanza para "hoy", "próximos" y "señas del mes".
     queryFn: async () => {
-      const page = await base44.entities.Appointment.filter(
-        { tenant_id: tenantId },
-        { sort: "fecha_hora_inicio", limit: 200 },
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      return unwrapDb(
+        await getSupabase()
+          .from("appointments")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .gte("fecha_hora_inicio", monthStart.toISOString())
+          .order("fecha_hora_inicio", { ascending: true })
+          .limit(500),
       );
-      return page.items;
     },
     enabled: Boolean(tenantId),
   });
 
   async function changeEstado(appointment, estado) {
-    await base44.entities.Appointment.update(appointment.id, { estado });
-    queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] });
+    try {
+      unwrapDb(await getSupabase().from("appointments").update({ estado }).eq("id", appointment.id));
+      queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] });
+    } catch (error) {
+      toast.error(error.message);
+    }
   }
 
   const now = new Date();

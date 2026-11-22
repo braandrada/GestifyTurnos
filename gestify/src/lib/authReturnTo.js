@@ -11,12 +11,12 @@
 // would carry a live one-time credential through the login round-trip (and,
 // via Google, into the provider's OAuth state), and the other three would just
 // loop. `/oauth/consent` is a legitimate destination and is not in this set.
-const AUTH_PAGES = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
+const AUTH_PAGES = new Set(["/login", "/register", "/forgot-password", "/reset-password", "/auth/confirm", "/mfa"]);
 
 export function safeReturnTo(search) {
   if (typeof window === "undefined") return "/";
   const params = new URLSearchParams(search ?? window.location.search);
-  return sanitizeReturnTo(params.get("returnTo") || params.get("from_url"));
+  return sanitizeReturnTo(params.get("returnTo"));
 }
 
 export function sanitizeReturnTo(raw) {
@@ -26,7 +26,7 @@ export function sanitizeReturnTo(raw) {
     if (url.origin !== window.location.origin) return "/";
     // Bootstrap params must never ride through a login round-trip and get
     // persisted into the fresh session. App-flow params (e.g. the consent ctx) stay.
-    for (const p of ["access_token", "clear_access_token", "app_id", "app_base_url", "functions_version", "from_url", "returnTo"]) {
+    for (const p of ["access_token", "refresh_token", "token_hash", "code", "returnTo"]) {
       url.searchParams.delete(p);
     }
     if (AUTH_PAGES.has(url.pathname.replace(/\/+$/, "") || "/")) return "/";
@@ -43,12 +43,6 @@ export function sanitizeReturnTo(raw) {
 export function currentPath() {
   if (typeof window === "undefined") return "/";
   return sanitizeReturnTo(window.location.pathname + window.location.search);
-}
-
-// The current page as the absolute URL the platform login's from_url expects.
-export function currentUrl() {
-  if (typeof window === "undefined") return "/";
-  return window.location.origin + currentPath();
 }
 
 // `search` for a <Link> to an auth page that should come back to `returnTo`.

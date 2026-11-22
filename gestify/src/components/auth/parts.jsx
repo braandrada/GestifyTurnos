@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GoogleIcon } from "./GoogleIcon";
-import { signInWithProvider } from "@/lib/authMfaFlow";
+import { signInWithGoogle } from "@/lib/auth.client";
 import { returnToSearch } from "@/lib/authReturnTo";
 
-// Small pieces the auth pages share.
+// Piezas que comparten las pantallas de autenticación.
 
 export function AuthError({ children }) {
   if (!children) return null;
@@ -37,10 +37,10 @@ export function GoogleButton({ returnTo, onError }) {
       type="button"
       variant="outline"
       className="mb-6 h-12 w-full text-sm font-medium"
-      onClick={() => signInWithProvider("google", returnTo).catch((err) => onError(err.message || "Unable to sign in with Google"))}
+      onClick={() => signInWithGoogle(returnTo).catch((err) => onError(err.message))}
     >
       <GoogleIcon className="mr-2 h-5 w-5" />
-      Continue with Google
+      Continuar con Google
     </Button>
   );
 }
@@ -52,13 +52,13 @@ export function OrDivider() {
         <div className="w-full border-t border-border" />
       </div>
       <div className="relative flex justify-center text-xs uppercase">
-        <span className="bg-card px-3 text-muted-foreground">or</span>
+        <span className="bg-card px-3 text-muted-foreground">o</span>
       </div>
     </div>
   );
 }
 
-// A link between auth screens that carries the way back (?returnTo=) along.
+// Link entre pantallas de autenticación que arrastra el camino de vuelta (?returnTo=).
 export function AuthLink({ to, returnTo, className = "font-medium text-primary hover:underline", children }) {
   return (
     <Link to={to} search={returnToSearch(returnTo)} className={className}>

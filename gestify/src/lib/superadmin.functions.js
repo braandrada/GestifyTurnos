@@ -36,7 +36,7 @@ export const provisionTenant = createServerFn({ method: "POST" })
     // Invitación por email (el dueño define su contraseña desde el link). Si ya existe, se vincula por email al ingresar.
     let invite = { invitado: true };
     let ownerId = null;
-    const invited = await db.auth.admin.inviteUserByEmail(email, { redirectTo: `${appOrigin()}/login` });
+    const invited = await db.auth.admin.inviteUserByEmail(email, { redirectTo: `${appOrigin()}/auth/confirm?type=invite` });
     if (invited.error) invite = { invitado: false, motivo: invited.error.message || "El usuario ya existe" };
     else ownerId = invited.data?.user?.id ?? null;
 

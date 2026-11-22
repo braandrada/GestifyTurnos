@@ -4,45 +4,35 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MfaFlow } from "@/components/auth/MfaFlow";
-import { MfaScreen } from "@/components/auth/MfaParts";
-import { loginWithMfa } from "@/lib/authMfa";
+import { signInWithPassword } from "@/lib/auth.client";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
-// The /login page. ?returnTo= (or the platform's ?from_url=) is where the visitor
-// goes after signing in — the login gate and the MCP consent page send people here with it.
+// Página /login. ?returnTo= es adonde va la persona después de ingresar (sin destino, al panel).
 export function LoginPage() {
   const returnTo = safeReturnTo();
+  const destination = returnTo === "/" ? "/panel" : returnTo;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mfaChallenge, setMfaChallenge] = useState(null);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const result = await loginWithMfa(email, password);
-      if (result.mfa_required) {
-        setMfaChallenge(result);
-        return;
-      }
-      // A hard redirect: the app re-initializes with the new session.
-      window.location.href = returnTo;
+      await signInWithPassword(email, password);
+      // Redirección completa: la app se reinicia con la sesión nueva.
+      window.location.href = destination;
     } catch (err) {
-      setError(err.message || "Email o contraseña incorrectos");
+      setError(err.message || "Email o contraseña incorrectos.");
       setBusy(false);
     }
   }
 
-  // The second sign-in step (authenticator app or text message) replaces the whole page.
-  if (mfaChallenge) return <MfaScreen><MfaFlow challenge={mfaChallenge} returnTo={returnTo} /></MfaScreen>;
-
   return (
     <AuthLayout icon={LogIn} title="Bienvenido de nuevo" subtitle="Ingresá con tu cuenta para administrar tu local">
-      <GoogleButton returnTo={returnTo} onError={setError} />
+      <GoogleButton returnTo={destination} onError={setError} />
       <OrDivider />
       <AuthError>{error}</AuthError>
       <form onSubmit={submit} className="space-y-4">
@@ -50,7 +40,7 @@ export function LoginPage() {
           <Label htmlFor="login-email">Email</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input id="login-email" type="email" autoComplete="email" autoFocus placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 pl-10" required />
+            <Input id="login-email" type="email" autoComplete="email" autoFocus placeholder="vos@ejemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 pl-10" required />
           </div>
         </div>
         <div className="space-y-2">

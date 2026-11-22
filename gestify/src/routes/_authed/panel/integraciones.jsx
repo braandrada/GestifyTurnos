@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, CreditCard, MessageCircle } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useMerchant } from "@/hooks/useMerchant";
+import { saveIntegration, saveTenantSettings } from "@/lib/merchant.functions";
 
 export const Route = createFileRoute("/_authed/panel/integraciones")({ component: IntegrationsPage });
 
@@ -19,9 +19,10 @@ function IntegrationsPage() {
   const integration = merchant?.integration;
 
   const [business, setBusiness] = useState({});
-  const [payments, setPayments] = useState({ mp_access_token: "" });
+  const [mpToken, setMpToken] = useState("");
   const [messaging, setMessaging] = useState({ whatsapp_api_url: "", whatsapp_token: "", whatsapp_activo: true });
   const [saved, setSaved] = useState("");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -40,10 +41,10 @@ function IntegrationsPage() {
 
   useEffect(() => {
     if (integration) {
-      setPayments({ mp_access_token: integration.mp_access_token || "" });
+      // Los tokens ya guardados no vuelven al navegador: el campo queda vacío y vacío significa "no cambiar".
       setMessaging({
         whatsapp_api_url: integration.whatsapp_api_url || "",
-        whatsapp_token: integration.whatsapp_token || "",
+        whatsapp_token: "",
         whatsapp_activo: integration.whatsapp_activo !== false,
       });
     }
@@ -54,19 +55,16 @@ function IntegrationsPage() {
   async function run(action, label) {
     setBusy(true);
     setSaved("");
+    setError("");
     try {
       await action();
       await refresh();
       setSaved(label);
+    } catch (err) {
+      setError(err.message || "No pudimos guardar los cambios.");
     } finally {
       setBusy(false);
     }
-  }
-
-  function saveIntegration(patch) {
-    return integration?.id
-      ? base44.entities.TenantIntegration.update(integration.id, patch)
-      : base44.entities.TenantIntegration.create({ tenant_id: tenant.id, ...patch });
   }
 
   function copyLink() {
@@ -83,6 +81,12 @@ function IntegrationsPage() {
         <p className="label-micro">Configuración</p>
         <h1 className="mt-1 text-3xl">Integraciones y datos</h1>
       </div>
+
+      {error ? (
+        <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
 
       <section className="rounded-2xl border border-border bg-card p-5">
         <p className="label-micro">Portal público</p>
@@ -139,9 +143,8 @@ function IntegrationsPage() {
             onClick={() =>
               run(
                 () =>
-                  base44.entities.Tenant.update(tenant.id, {
-                    ...business,
-                    horas_aviso_previo: Number(business.horas_aviso_previo) || 24,
+                  saveTenantSettings({
+                    data: { ...business, horas_aviso_previo: Number(business.horas_aviso_previo) || 24 },
                   }),
                 "Datos guardados",
               )
@@ -162,24 +165,49 @@ function IntegrationsPage() {
           Con el access token de tu cuenta cobramos las señas de tus turnos. Sin token, las reservas se confirman sin
           seña online.
         </p>
+        <p className="mt-3 text-sm">
+          Estado:{" "}
+          {integration?.mp_conectado ? (
+            <span className="font-medium text-primary">conectado</span>
+          ) : (
+            <span className="text-muted-foreground">sin conectar</span>
+          )}
+        </p>
         <div className="mt-4 space-y-2">
-          <Label>Access token de producción</Label>
+          <Label>{integration?.mp_conectado ? "Reemplazar access token" : "Access token de producción"}</Label>
           <Input
             type="password"
+            autoComplete="off"
             placeholder="APP_USR-…"
-            value={payments.mp_access_token}
-            onChange={(e) => setPayments({ ...payments, mp_access_token: e.target.value })}
+            value={mpToken}
+            onChange={(e) => setMpToken(e.target.value)}
           />
+          <p className="text-xs text-muted-foreground">Por seguridad, el token guardado no se vuelve a mostrar.</p>
         </div>
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             className="rounded-full"
-            disabled={busy}
-            onClick={() => run(() => saveIntegration({ mp_access_token: payments.mp_access_token.trim() }), "Mercado Pago actualizado")}
+            disabled={busy || !mpToken.trim()}
+            onClick={() =>
+              run(async () => {
+                await saveIntegration({ data: { mp_access_token: mpToken.trim() } });
+                setMpToken("");
+              }, "Mercado Pago actualizado")
+            }
           >
             Guardar token
           </Button>
-          {saved === "Mercado Pago actualizado" ? <span className="text-xs text-primary">{saved}</span> : null}
+          {integration?.mp_conectado ? (
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={busy}
+              onClick={() => run(() => saveIntegration({ data: { quitar_mp_token: true } }), "Mercado Pago desconectado")}
+            >
+              Desconectar
+            </Button>
+          ) : null}
+          {saved.startsWith("Mercado Pago") ? <span className="text-xs text-primary">{saved}</span> : null}
         </div>
       </section>
 
@@ -205,6 +233,8 @@ function IntegrationsPage() {
             <Label>Token / API key</Label>
             <Input
               type="password"
+              autoComplete="off"
+              placeholder={integration?.whatsapp_token_configurado ? "Guardado (dejá vacío para no cambiarlo)" : ""}
               value={messaging.whatsapp_token}
               onChange={(e) => setMessaging({ ...messaging, whatsapp_token: e.target.value })}
             />
@@ -221,9 +251,35 @@ function IntegrationsPage() {
           />
         </div>
         <div className="mt-4 flex items-center gap-3">
-          <Button className="rounded-full" disabled={busy} onClick={() => run(() => saveIntegration(messaging), "Mensajería actualizada")}>
+          <Button
+            className="rounded-full"
+            disabled={busy}
+            onClick={() =>
+              run(
+                () =>
+                  saveIntegration({
+                    data: {
+                      whatsapp_api_url: messaging.whatsapp_api_url.trim(),
+                      whatsapp_activo: messaging.whatsapp_activo,
+                      ...(messaging.whatsapp_token.trim() ? { whatsapp_token: messaging.whatsapp_token.trim() } : {}),
+                    },
+                  }),
+                "Mensajería actualizada",
+              )
+            }
+          >
             Guardar mensajería
           </Button>
+          {integration?.whatsapp_token_configurado ? (
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={busy}
+              onClick={() => run(() => saveIntegration({ data: { quitar_whatsapp_token: true } }), "Mensajería actualizada")}
+            >
+              Quitar token
+            </Button>
+          ) : null}
           {saved === "Mensajería actualizada" ? <span className="text-xs text-primary">{saved}</span> : null}
         </div>
       </section>

@@ -1,11 +1,12 @@
 import { useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
 import { useMerchant } from "@/hooks/useMerchant";
 import SubscriptionBanner from "@/components/admin/SubscriptionBanner";
 import AutoDebitCard from "@/components/admin/AutoDebitCard";
+import { unwrapDb } from "@/lib/db.client";
 import { formatDate, formatMoney } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase.client";
 
 export const Route = createFileRoute("/_authed/panel/abono")({ component: AbonoPage });
 
@@ -23,13 +24,15 @@ function AbonoPage() {
 
   const { data: pagos = [], isLoading } = useQuery({
     queryKey: ["subscription-payments", tenantId],
-    queryFn: async () => {
-      const page = await base44.entities.SubscriptionPayment.filter(
-        { tenant_id: tenantId },
-        { sort: "-fecha_pago", limit: 6 },
-      );
-      return page.items;
-    },
+    queryFn: async () =>
+      unwrapDb(
+        await getSupabase()
+          .from("subscription_payments")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .order("fecha_pago", { ascending: false })
+          .limit(6),
+      ),
     enabled: Boolean(tenantId),
   });
 

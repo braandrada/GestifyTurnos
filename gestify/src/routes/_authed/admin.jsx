@@ -3,7 +3,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, Plus, RefreshCw, Store, TrendingUp, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 import { Wordmark } from "@/components/marketing/MarketingNav";
@@ -11,7 +10,9 @@ import TenantsTable from "@/components/superadmin/TenantsTable";
 import RegisterTenantModal from "@/components/superadmin/RegisterTenantModal";
 import RecordPaymentModal from "@/components/superadmin/RecordPaymentModal";
 import { provisionTenant, registerSubscriptionPayment, runPlatformAutomations, setSubscriptionState } from "@/lib/superadmin.functions";
+import { unwrapDb } from "@/lib/db.client";
 import { formatDate, formatMoney } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase.client";
 
 export const Route = createFileRoute("/_authed/admin")({ component: SuperAdminDashboard });
 
@@ -29,17 +30,18 @@ function SuperAdminDashboard() {
 
   const tenantsQuery = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => base44.entities.Tenant.list({ sort: "created_date", limit: 200 }).then((page) => page.items),
+    queryFn: async () => unwrapDb(await getSupabase().from("tenants").select("*").order("created_at", { ascending: true }).limit(200)),
     enabled: isAdmin,
   });
   const subscriptionsQuery = useQuery({
     queryKey: ["admin-subscriptions"],
-    queryFn: () => base44.entities.TenantSubscription.list({ limit: 200 }).then((page) => page.items),
+    queryFn: async () => unwrapDb(await getSupabase().from("tenant_subscriptions").select("*").limit(200)),
     enabled: isAdmin,
   });
   const paymentsQuery = useQuery({
     queryKey: ["admin-payments"],
-    queryFn: () => base44.entities.SubscriptionPayment.list({ sort: "-fecha_pago", limit: 100 }).then((page) => page.items),
+    queryFn: async () =>
+      unwrapDb(await getSupabase().from("subscription_payments").select("*").order("fecha_pago", { ascending: false }).limit(100)),
     enabled: isAdmin,
   });
 

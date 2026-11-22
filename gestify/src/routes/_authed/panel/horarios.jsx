@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useMerchant } from "@/hooks/useMerchant";
+import { unwrapDb } from "@/lib/db.client";
 import { DIAS } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase.client";
 
 export const Route = createFileRoute("/_authed/panel/horarios")({ component: SchedulePage });
 
@@ -17,32 +19,35 @@ function SchedulePage() {
 
   const { data: schedules = [], isLoading } = useQuery({
     queryKey: ["schedules", tenantId],
-    queryFn: () => base44.entities.Schedule.filter({ tenant_id: tenantId }, { limit: 100 }).then((page) => page.items),
+    queryFn: async () => unwrapDb(await getSupabase().from("schedules").select("*").eq("tenant_id", tenantId).limit(100)),
     enabled: Boolean(tenantId),
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["schedules", tenantId] });
 
-  async function addInterval(dia) {
-    await base44.entities.Schedule.create({
-      tenant_id: tenantId,
-      dia_semana: dia,
-      hora_inicio: "09:00",
-      hora_fin: "18:00",
-      activo: true,
-    });
+  // Una franja con la hora de fin antes de la de inicio la rechaza la base: se avisa y se vuelve a cargar.
+  async function mutate(operation) {
+    try {
+      await operation();
+    } catch (error) {
+      toast.error(error.message);
+    }
     refresh();
   }
 
-  async function updateInterval(id, patch) {
-    await base44.entities.Schedule.update(id, patch);
-    refresh();
-  }
+  const addInterval = (dia) =>
+    mutate(async () =>
+      unwrapDb(
+        await getSupabase()
+          .from("schedules")
+          .insert({ tenant_id: tenantId, dia_semana: dia, hora_inicio: "09:00", hora_fin: "18:00", activo: true }),
+      ),
+    );
 
-  async function removeInterval(id) {
-    await base44.entities.Schedule.delete(id);
-    refresh();
-  }
+  const updateInterval = (id, patch) =>
+    mutate(async () => unwrapDb(await getSupabase().from("schedules").update(patch).eq("id", id)));
+
+  const removeInterval = (id) => mutate(async () => unwrapDb(await getSupabase().from("schedules").delete().eq("id", id)));
 
   return (
     <div className="space-y-6">

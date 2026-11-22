@@ -29,10 +29,16 @@ export const Route = createFileRoute("/api/mp-suscripciones")({
 
           if (!accessToken || !type || !id) return Response.json({ ok: true, ignored: true });
 
+          // Firma: por defecto solo se registra si no coincide (todo se vuelve a consultar a MP, así que un aviso
+          // falso no puede modificar nada). Con MP_WEBHOOK_STRICT=true se rechaza. Activalo cuando los logs
+          // muestren que los avisos reales de Mercado Pago llegan con firma válida.
           const webhookSecret = process.env.MP_WEBHOOK_SECRET;
           if (webhookSecret) {
             if (!verifyMpSignature({ request, dataId: id, secret: webhookSecret })) {
-              return Response.json({ error: "firma inválida" }, { status: 401 });
+              console.warn("[mp-suscripciones] firma x-signature inválida o ausente (data.id=%s)", id);
+              if (process.env.MP_WEBHOOK_STRICT === "true") {
+                return Response.json({ error: "firma inválida" }, { status: 401 });
+              }
             }
           } else {
             console.warn("[mp-suscripciones] MP_WEBHOOK_SECRET no está configurada: no se valida la firma.");
@@ -40,7 +46,8 @@ export const Route = createFileRoute("/api/mp-suscripciones")({
 
           const db = supabaseAdmin();
 
-          if (type === "preapproval") {
+          // Según el canal, Mercado Pago nombra el evento "preapproval" o "subscription_preapproval".
+          if (type === "preapproval" || type === "subscription_preapproval") {
             const preapproval = await getPreapproval({ accessToken, preapprovalId: id });
             if (!preapproval) return Response.json({ ok: true, ignored: "sin_preapproval" });
 

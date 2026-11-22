@@ -2,12 +2,14 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Pencil, Plus, Trash2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import ServiceDialog from "@/components/admin/ServiceDialog";
 import { useMerchant } from "@/hooks/useMerchant";
+import { unwrapDb } from "@/lib/db.client";
 import { formatMoney } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase.client";
 
 export const Route = createFileRoute("/_authed/panel/servicios")({ component: ServicesPage });
 
@@ -22,7 +24,10 @@ function ServicesPage() {
 
   const { data: services = [], isLoading } = useQuery({
     queryKey: ["services", tenantId],
-    queryFn: () => base44.entities.Service.filter({ tenant_id: tenantId }, { sort: "created_date", limit: 100 }).then((page) => page.items),
+    queryFn: async () =>
+      unwrapDb(
+        await getSupabase().from("services").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).limit(100),
+      ),
     enabled: Boolean(tenantId),
   });
 
@@ -31,25 +36,36 @@ function ServicesPage() {
   async function save(values) {
     setSaving(true);
     try {
-      if (editing?.id) await base44.entities.Service.update(editing.id, values);
-      else await base44.entities.Service.create({ ...values, tenant_id: tenantId });
+      const table = getSupabase().from("services");
+      if (editing?.id) unwrapDb(await table.update(values).eq("id", editing.id));
+      else unwrapDb(await table.insert({ ...values, tenant_id: tenantId }));
       await refresh();
       setDialogOpen(false);
       setEditing(null);
+    } catch (error) {
+      toast.error(error.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function toggle(service, activo) {
-    await base44.entities.Service.update(service.id, { activo });
-    refresh();
+    try {
+      unwrapDb(await getSupabase().from("services").update({ activo }).eq("id", service.id));
+      refresh();
+    } catch (error) {
+      toast.error(error.message);
+    }
   }
 
   async function remove(service) {
-    await base44.entities.Service.delete(service.id);
-    setConfirmId(null);
-    refresh();
+    try {
+      unwrapDb(await getSupabase().from("services").delete().eq("id", service.id));
+      setConfirmId(null);
+      refresh();
+    } catch (error) {
+      toast.error(error.message);
+    }
   }
 
   return (
