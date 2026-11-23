@@ -11,12 +11,12 @@ export default function MarketingFooter() {
           <div className="max-w-md">
             <h2 className="text-3xl leading-tight sm:text-4xl">Sumá tu local y empezá a tomar turnos hoy.</h2>
             <p className="mt-3 text-sm text-primary-foreground/70">
-              El alta la gestiona el equipo de la plataforma. Ingresá al panel para ver tu agenda.
+              Creá tu cuenta, cargá tus servicios y compartí tu link. Empezás con un período de prueba sin cargo.
             </p>
           </div>
           <Button asChild size="lg" variant="secondary" className="rounded-full px-6">
-            <Link to="/login" search={{ returnTo: "/panel" }}>
-              Ingresar al panel
+            <Link to="/register" search={{ returnTo: "/panel" }}>
+              Crear mi cuenta
               <ArrowUpRight className="ml-1 h-4 w-4" />
             </Link>
           </Button>

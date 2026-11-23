@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { appOrigin } from "@/lib/app-url.server";
-import { confirmAppointment } from "@/lib/appointments.server";
+import { requireUser } from "@/lib/auth-middleware";
+import { confirmAppointment, manageText } from "@/lib/appointments.server";
 import { formatDateTime } from "@/lib/format";
 import { createPreference, findApprovedPayment } from "@/lib/mercadopago.server";
 import { toWhatsAppNumber } from "@/lib/phone";
@@ -44,7 +45,7 @@ async function subscriptionState(tenantId) {
 }
 
 // Horarios y turnos "vivos" del día (en hora de Argentina) para calcular disponibilidad.
-async function loadDay(tenantId, dateKey) {
+async function loadDay(tenantId, dateKey, excludeId = null) {
   const dayStart = toInstant(dateKey, "00:00");
   if (Number.isNaN(dayStart.getTime())) return null;
   const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
@@ -56,7 +57,7 @@ async function loadDay(tenantId, dateKey) {
     db.from("schedules").select(`dia_semana, hora_inicio, hora_fin, activo${staffCol}`).eq("tenant_id", tenantId).eq("activo", true),
     db
       .from("appointments")
-      .select(`fecha_hora_inicio, fecha_hora_fin, estado, expira_pago_en${staffCol}`)
+      .select(`id, fecha_hora_inicio, fecha_hora_fin, estado, expira_pago_en${staffCol}`)
       .eq("tenant_id", tenantId)
       .in("estado", ["confirmado", "pendiente_pago"])
       .lt("fecha_hora_inicio", dayEnd.toISOString())
@@ -68,7 +69,11 @@ async function loadDay(tenantId, dateKey) {
       .lt("inicio", dayEnd.toISOString())
       .gt("fin", dayStart.toISOString()),
   ]);
-  return { schedules: unwrap(schedules), appointments: unwrap(appointments), blocks: blocksOrEmpty(blocks) };
+  return {
+    schedules: unwrap(schedules),
+    appointments: unwrap(appointments).filter((appointment) => appointment.id !== excludeId),
+    blocks: blocksOrEmpty(blocks),
+  };
 }
 
 // La tabla `blocks` llega con la migración 004. Si todavía no se corrió, la agenda sigue funcionando sin bloqueos.
@@ -84,6 +89,8 @@ function blocksOrEmpty(response) {
 const MAX_DAYS_AHEAD = 60; // no se reserva más allá de esto
 const MIN_LEAD_MINUTES = 15; // anticipación mínima (también deja margen para pagar la seña)
 const MAX_PENDING_PER_PHONE = 2; // reservas impagas simultáneas por teléfono y comercio (anti-spam)
+const CHANGE_DEADLINE_HOURS = 2; // el cliente puede cancelar o reprogramar hasta 2 horas antes del turno
+const MAX_RESCHEDULES = 2; // reprogramaciones por turno desde el link del cliente
 
 const MISSING_RELATION = ["42P01", "PGRST205"];
 
@@ -199,6 +206,8 @@ export const getAvailability = createServerFn({ method: "POST" })
       serviceId: z.string().min(1).max(80),
       dateKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       staffId: z.string().uuid().nullish(),
+      // Al reprogramar: el turno actual no cuenta como ocupado (hace falta el código, que es secreto).
+      codigo: z.string().min(6).max(80).nullish(),
     }),
   )
   .handler(async ({ data }) => {
@@ -210,7 +219,17 @@ export const getAvailability = createServerFn({ method: "POST" })
     const service = await loadService(tenant.id, data.serviceId);
     if (!service || service.activo === false) return { slots: [] };
 
-    const [day, staff] = await Promise.all([loadDay(tenant.id, data.dateKey), loadStaff(tenant.id)]);
+    let excludeId = null;
+    if (data.codigo) {
+      const own = await supabaseAdmin()
+        .from("appointments")
+        .select("id")
+        .eq("codigo_publico", data.codigo)
+        .eq("tenant_id", tenant.id)
+        .maybeSingle();
+      excludeId = own.data?.id ?? null;
+    }
+    const [day, staff] = await Promise.all([loadDay(tenant.id, data.dateKey, excludeId), loadStaff(tenant.id)]);
     // Al navegador solo va el horario: qué profesional queda libre se resuelve al reservar.
     const slots = slotsForDay(data.dateKey, service, day, staff, data.staffId || null);
     return { slots: slots.map(({ start, label }) => ({ start, label })) };
@@ -321,7 +340,7 @@ export const createBooking = createServerFn({ method: "POST" })
           appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""
         } en ${tenant.nombre_comercio} quedó confirmado para el ${formatDateTime(
           appointment.fecha_hora_inicio,
-        )}. Te esperamos en ${tenant.direccion || "el local"}.`,
+        )}. Te esperamos en ${tenant.direccion || "el local"}.${manageText(appointment.codigo_publico)}`,
       );
       return { codigo, requierePago: false, initPoint: null };
     }
@@ -377,6 +396,13 @@ export const getBookingStatus = createServerFn({ method: "POST" })
       estado,
       servicio_nombre: appointment.servicio_nombre || "",
       staff_nombre: appointment.staff_nombre || "",
+      service_id: appointment.service_id,
+      staff_id: appointment.staff_id || null,
+      // El cliente puede cancelar/reprogramar un turno confirmado hasta CHANGE_DEADLINE_HOURS antes.
+      puede_cancelar: estado === "confirmado" && canChange(appointment),
+      puede_reprogramar:
+        estado === "confirmado" && canChange(appointment) && Boolean(appointment.service_id) && reschedulesOf(appointment) < MAX_RESCHEDULES,
+      limite_cambios_horas: CHANGE_DEADLINE_HOURS,
       cliente_nombre: appointment.cliente_nombre,
       fecha_hora_inicio: appointment.fecha_hora_inicio,
       monto_sena: Number(appointment.monto_sena) || 0,
@@ -389,4 +415,228 @@ export const getBookingStatus = createServerFn({ method: "POST" })
         politica_sena: tenant?.politica_sena || "",
       },
     };
+  });
+
+// ---------------------------------------------------------------------
+// Cambios del cliente desde el link de su turno (/pago/:codigo). El código es la "llave": UUID no adivinable.
+// ---------------------------------------------------------------------
+
+function canChange(appointment) {
+  return new Date(appointment.fecha_hora_inicio).getTime() - Date.now() > CHANGE_DEADLINE_HOURS * 3600 * 1000;
+}
+
+// Cuántas veces se reprogramó: se cuenta en las notas, sin tocar el esquema.
+const RESCHEDULE_MARK = "[reprogramado]";
+const reschedulesOf = (appointment) => String(appointment.notas || "").split(RESCHEDULE_MARK).length - 1;
+
+async function loadOwnAppointment(codigo) {
+  const db = supabaseAdmin();
+  const appointment = unwrap(await db.from("appointments").select("*").eq("codigo_publico", codigo).maybeSingle());
+  if (!appointment) throw new Error("No encontramos tu turno. Revisá el link.");
+  const tenant = unwrap(await db.from("tenants").select("*").eq("id", appointment.tenant_id).maybeSingle());
+  if (!tenant) throw new Error("No encontramos el comercio");
+  return { db, appointment, tenant };
+}
+
+function assertChangeable(appointment) {
+  if (appointment.estado !== "confirmado") throw new Error("Este turno ya no se puede modificar.");
+  if (!canChange(appointment)) {
+    throw new Error(`Los cambios se pueden hacer hasta ${CHANGE_DEADLINE_HOURS} horas antes. Escribile al local por WhatsApp.`);
+  }
+}
+
+// Aviso al comercio por su propio WhatsApp (si tiene el envío configurado). Nunca falla.
+async function notifyMerchant(tenant, text) {
+  if (tenant.telefono_whatsapp) await sendWhatsAppMessage(tenant.id, tenant.telefono_whatsapp, text).catch(() => null);
+}
+
+export const cancelBooking = createServerFn({ method: "POST" })
+  .validator(z.object({ codigo: z.string().min(6).max(80) }))
+  .handler(async ({ data }) => {
+    const { db, appointment, tenant } = await loadOwnAppointment(data.codigo);
+    assertChangeable(appointment);
+
+    // Condición sobre el estado: si dos pestañas cancelan a la vez, solo una lo hace.
+    const updated = unwrap(
+      await db
+        .from("appointments")
+        .update({ estado: "cancelado", notas: `${appointment.notas ? `${appointment.notas} ` : ""}Cancelado por el cliente.`.trim() })
+        .eq("id", appointment.id)
+        .eq("estado", "confirmado")
+        .select("id")
+        .maybeSingle(),
+    );
+    if (!updated) throw new Error("Este turno ya no se puede modificar.");
+
+    await notifyMerchant(
+      tenant,
+      `Turno cancelado por el cliente: ${appointment.cliente_nombre} (${appointment.servicio_nombre || "servicio"}${
+        appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""
+      }) del ${formatDateTime(appointment.fecha_hora_inicio)}.${
+        Number(appointment.monto_sena) > 0 ? " Tenía seña pagada: revisá si corresponde reembolsar." : ""
+      }`,
+    );
+    return { ok: true };
+  });
+
+export const rescheduleBooking = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      codigo: z.string().min(6).max(80),
+      startIso: z.string().min(10).max(40),
+      staffId: z.string().uuid().nullish(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { db, appointment, tenant } = await loadOwnAppointment(data.codigo);
+    assertChangeable(appointment);
+    if (reschedulesOf(appointment) >= MAX_RESCHEDULES) {
+      throw new Error("Ya reprogramaste este turno. Para otro cambio escribile al local por WhatsApp.");
+    }
+    const estado = await subscriptionState(tenant.id);
+    if (tenant.activo === false || estado !== "activa") throw new Error("El sistema de turnos del local está temporalmente inhabilitado");
+
+    const service = appointment.service_id ? await loadService(tenant.id, appointment.service_id) : null;
+    if (!service) throw new Error("El servicio de este turno ya no está disponible. Escribile al local.");
+
+    const start = new Date(data.startIso);
+    if (Number.isNaN(start.getTime())) throw new Error("Elegí un horario válido.");
+    const dateKey = dateKeyOf(start.toISOString());
+    if (!withinHorizon(dateKey)) throw new Error(`Solo se puede reservar hasta ${MAX_DAYS_AHEAD} días adelante.`);
+
+    const [day, staff] = await Promise.all([loadDay(tenant.id, dateKey, appointment.id), loadStaff(tenant.id)]);
+    const offered = slotsForDay(dateKey, service, day, staff, data.staffId || null).find((slot) => slot.start === start.toISOString());
+    if (!offered) throw new Error("Ese horario ya no está disponible. Elegí otro por favor.");
+
+    // Mismo profesional si sigue libre; si no (o eligió "Cualquiera"), el primero libre.
+    const pick = staff.length
+      ? (offered.staffIds.includes(appointment.staff_id) && !data.staffId ? appointment.staff_id : offered.staffIds[0])
+      : null;
+    const member = staff.find((m) => m.id === pick) || null;
+
+    const end = addMinutes(start, Number(service.duracion_minutos) || 30);
+    const updated = await db
+      .from("appointments")
+      .update({
+        fecha_hora_inicio: start.toISOString(),
+        fecha_hora_fin: end.toISOString(),
+        ...(staff.length ? { staff_id: member?.id ?? null, staff_nombre: member?.nombre ?? null } : {}),
+        recordatorio_1_enviado: false,
+        recordatorio_2_enviado: false,
+        notas: `${appointment.notas ? `${appointment.notas} ` : ""}${RESCHEDULE_MARK} antes: ${formatDateTime(appointment.fecha_hora_inicio)}.`,
+      })
+      .eq("id", appointment.id)
+      .eq("estado", "confirmado")
+      .select("*")
+      .maybeSingle();
+    if (updated.error) {
+      if (updated.error.code === "23P01") throw new Error("Ese horario acaba de ocuparse. Elegí otro por favor.");
+      throw dbFail(updated.error, "No pudimos reprogramar el turno. Probá de nuevo.");
+    }
+    if (!updated.data) throw new Error("Este turno ya no se puede modificar.");
+
+    const nuevo = updated.data;
+    const con = nuevo.staff_nombre ? ` con ${nuevo.staff_nombre}` : "";
+    await sendWhatsAppMessage(
+      tenant.id,
+      nuevo.cliente_telefono,
+      `Hola ${nuevo.cliente_nombre}! Reprogramamos tu turno de ${nuevo.servicio_nombre || "servicio"}${con} en ${
+        tenant.nombre_comercio
+      } para el ${formatDateTime(nuevo.fecha_hora_inicio)}.`,
+    );
+    await notifyMerchant(
+      tenant,
+      `Turno reprogramado por el cliente: ${nuevo.cliente_nombre} (${nuevo.servicio_nombre || "servicio"}${con}) pasó del ${formatDateTime(
+        appointment.fecha_hora_inicio,
+      )} al ${formatDateTime(nuevo.fecha_hora_inicio)}.`,
+    );
+    return { ok: true, fecha_hora_inicio: nuevo.fecha_hora_inicio };
+  });
+
+// ---------------------------------------------------------------------
+// Turno cargado por el comercio desde el panel (llamadas, clientes sin reserva).
+// El tenant sale del perfil del usuario, nunca del navegador. El comercio puede salirse de sus horarios
+// (es su agenda), pero la base igual impide superponer dos turnos del mismo profesional.
+// ---------------------------------------------------------------------
+export const createManualAppointment = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(
+    z.object({
+      serviceId: z.string().uuid(),
+      staffId: z.string().uuid().nullish(),
+      startIso: z.string().min(10).max(40),
+      clienteNombre: z.string().trim().min(2, "Ingresá el nombre del cliente").max(120),
+      clienteTelefono: z.string().trim().max(40).optional(),
+      notas: z.string().trim().max(400).optional(),
+      avisarCliente: z.boolean().optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const tenantId = context.profile?.tenant_id;
+    if (!tenantId || context.profile?.tipo_usuario !== "comerciante") throw new Error("Tu usuario no tiene un comercio asociado");
+    const db = supabaseAdmin();
+    const tenant = unwrap(await db.from("tenants").select("*").eq("id", tenantId).maybeSingle());
+    if (!tenant) throw new Error("Tu usuario no tiene un comercio asociado");
+
+    const service = await loadService(tenant.id, data.serviceId);
+    if (!service) throw new Error("Elegí un servicio válido");
+
+    const staff = await loadStaff(tenant.id);
+    let member = null;
+    if (staff.length) {
+      member = staff.find((m) => m.id === data.staffId) || null;
+      if (!member) throw new Error("Elegí el profesional que atiende el turno");
+    }
+
+    let telefono = null;
+    if (data.clienteTelefono) {
+      telefono = toWhatsAppNumber(data.clienteTelefono);
+      if (!telefono) throw new Error("Revisá el teléfono: con código de área, por ejemplo 11 5555 5555 (o dejalo vacío).");
+    }
+
+    const start = new Date(data.startIso);
+    if (Number.isNaN(start.getTime())) throw new Error("Elegí fecha y hora");
+    // Se permite cargar un turno de hoy que ya empezó (cliente que llegó sin reserva), no días pasados.
+    if (start.getTime() < Date.now() - 12 * 3600 * 1000) throw new Error("No se pueden cargar turnos de días anteriores");
+    const end = addMinutes(start, Number(service.duracion_minutos) || 30);
+
+    const inserted = await db
+      .from("appointments")
+      .insert({
+        tenant_id: tenant.id,
+        service_id: service.id,
+        servicio_nombre: service.nombre,
+        ...(member ? { staff_id: member.id, staff_nombre: member.nombre } : {}),
+        cliente_nombre: data.clienteNombre,
+        cliente_telefono: telefono,
+        fecha_hora_inicio: start.toISOString(),
+        fecha_hora_fin: end.toISOString(),
+        estado: "confirmado",
+        expira_pago_en: null,
+        codigo_publico: crypto.randomUUID(),
+        monto_sena: 0,
+        notas: ["Cargado desde el panel.", data.notas].filter(Boolean).join(" "),
+      })
+      .select("*")
+      .single();
+    if (inserted.error) {
+      if (inserted.error.code === "23P01") {
+        throw new Error(member ? `${member.nombre} ya tiene un turno en ese horario.` : "Ya hay un turno en ese horario.");
+      }
+      throw dbFail(inserted.error, "No pudimos guardar el turno. Probá de nuevo.");
+    }
+
+    const appointment = inserted.data;
+    let avisado = false;
+    if (data.avisarCliente && telefono) {
+      const result = await sendWhatsAppMessage(
+        tenant.id,
+        telefono,
+        `Hola ${appointment.cliente_nombre}! Te agendamos un turno de ${service.nombre}${member ? ` con ${member.nombre}` : ""} en ${
+          tenant.nombre_comercio
+        } para el ${formatDateTime(appointment.fecha_hora_inicio)}. Si necesitás cambiarlo: ${appOrigin()}/pago/${appointment.codigo_publico}`,
+      );
+      avisado = result.sent;
+    }
+    return { ok: true, codigo: appointment.codigo_publico, avisado };
   });

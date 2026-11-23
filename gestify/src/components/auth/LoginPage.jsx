@@ -1,7 +1,7 @@
 import { Lock, LogIn, Mail } from "lucide-react";
 import { useState } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
+import { AuthError, AuthLink, GoogleButton, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signInWithPassword } from "@/lib/auth-browser";
@@ -33,7 +33,6 @@ export function LoginPage() {
   return (
     <AuthLayout icon={LogIn} title="Bienvenido de nuevo" subtitle="Ingresá con tu cuenta para administrar tu local">
       <GoogleButton returnTo={destination} onError={setError} />
-      <OrDivider />
       <AuthError>{error}</AuthError>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">

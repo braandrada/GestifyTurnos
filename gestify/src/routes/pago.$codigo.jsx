@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarCheck, CalendarX2, Clock, Loader2, MapPin, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ManageBooking from "@/components/public/ManageBooking";
 import { getBookingStatus } from "@/lib/booking.functions";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { whatsAppLink } from "@/lib/phone";
@@ -78,14 +79,22 @@ function PaymentStatusPage() {
         </span>
 
         <h1 className="mt-5 text-3xl leading-tight">
-          {confirmado ? "¡Turno confirmado!" : pendiente ? "Esperando el pago" : "Turno sin confirmar"}
+          {confirmado
+            ? "¡Turno confirmado!"
+            : pendiente
+              ? "Esperando el pago"
+              : data.estado === "cancelado"
+                ? "Turno cancelado"
+                : "Turno sin confirmar"}
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {confirmado
-            ? `Te esperamos en ${data.comercio.nombre_comercio}. Te enviamos la confirmación por WhatsApp.`
+            ? `Te esperamos en ${data.comercio.nombre_comercio}. Guardá este link: desde acá podés cambiar o cancelar tu turno.`
             : pendiente
               ? "Estamos verificando el pago de la seña con Mercado Pago. Esta pantalla se actualiza sola."
-              : "El pago no se completó y el horario se liberó. Podés reservar de nuevo cuando quieras."}
+              : data.estado === "cancelado"
+                ? "Este turno está cancelado y el horario quedó libre. Podés reservar de nuevo cuando quieras."
+                : "El pago no se completó y el horario se liberó. Podés reservar de nuevo cuando quieras."}
         </p>
 
         <div className="mt-6 space-y-3 rounded-2xl bg-secondary/70 px-4 py-4 text-sm">
@@ -121,6 +130,8 @@ function PaymentStatusPage() {
             {data.comercio.direccion}
           </p>
         ) : null}
+
+        <ManageBooking booking={data} />
 
         <div className="mt-7 flex flex-col gap-2">
           {pendiente ? (

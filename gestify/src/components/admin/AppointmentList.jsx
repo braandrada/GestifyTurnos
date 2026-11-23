@@ -59,7 +59,8 @@ export default function AppointmentList({ appointments, onChangeEstado, emptyTex
                     <p className="truncate text-sm font-medium">{appointment.cliente_nombre}</p>
                     <p className="truncate text-xs text-muted-foreground">
                       {appointment.servicio_nombre || "Servicio"}
-                      {appointment.staff_nombre ? ` · con ${appointment.staff_nombre}` : ""} · {appointment.cliente_telefono}
+                      {appointment.staff_nombre ? ` · con ${appointment.staff_nombre}` : ""}
+                      {appointment.cliente_telefono ? ` · ${appointment.cliente_telefono}` : ""}
                       {appointment.monto_sena > 0 ? ` · seña ${formatMoney(appointment.monto_sena)}` : ""}
                     </p>
                   </div>

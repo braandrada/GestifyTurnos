@@ -7,7 +7,7 @@ import { sanitizeReturnTo } from "@/lib/authReturnTo";
 import { getSupabase } from "@/lib/supabase-browser";
 
 // Tipos de link de email que aceptamos. Cada uno llega con ?token_hash=...
-const EMAIL_LINK_TYPES = new Set(["recovery", "invite"]);
+const EMAIL_LINK_TYPES = new Set(["recovery", "invite", "signup", "email"]);
 
 /**
  * Página /auth/confirm: destino de todo lo que vuelve de Supabase por link.
@@ -38,7 +38,13 @@ export function AuthConfirmPage() {
           if (!EMAIL_LINK_TYPES.has(type)) throw new Error("Link inválido");
           const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
           if (verifyError) throw verifyError;
-          window.location.replace(`/reset-password?modo=${type}`);
+          // Confirmación de registro: directo al panel. Invitación / recuperación: elegir contraseña.
+          if (type === "signup" || type === "email") {
+            const next = sanitizeReturnTo(params.get("next"));
+            window.location.replace(next === "/" ? "/panel" : next);
+          } else {
+            window.location.replace(`/reset-password?modo=${type}`);
+          }
           return;
         }
 

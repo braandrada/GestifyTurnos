@@ -1,20 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { addOneMonth } from "@/lib/billing-dates";
 import { platformToken } from "@/lib/billing.server";
 import { getAuthorizedPayment, getPreapproval } from "@/lib/mercadopago.server";
 import { verifyMpSignature } from "@/lib/mp-signature.server";
 import { supabaseAdmin } from "@/lib/supabase.server";
 
-// Suma un mes calendario sin desbordar: 31/01 → 28/02 (no 03/03).
-function addOneMonth(iso) {
-  const now = new Date();
-  const base = iso && new Date(iso) > now ? new Date(iso) : now;
-  const day = base.getUTCDate();
-  base.setUTCDate(1);
-  base.setUTCMonth(base.getUTCMonth() + 1);
-  const lastDay = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
-  base.setUTCDate(Math.min(day, lastDay));
-  return base.toISOString();
-}
 
 /**
  * Webhook del abono mensual: Mercado Pago avisa la autorización del débito y cada cobro.

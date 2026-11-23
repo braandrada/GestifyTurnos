@@ -4,6 +4,15 @@ import { getRequest } from "@tanstack/react-start/server";
  * URL pública de la app para armar back_urls y notification_url de Mercado Pago.
  * Se toma de APP_URL (o de la request), NUNCA de lo que mande el navegador.
  */
+/** Link del turno para el cliente (ver, reprogramar, cancelar). null si no se puede armar la URL. */
+export function bookingLink(codigo) {
+  try {
+    return `${appOrigin()}/pago/${codigo}`;
+  } catch {
+    return null;
+  }
+}
+
 export function appOrigin(request = getRequest()) {
   let fixed = String(process.env.APP_URL || "").trim().replace(/\/+$/, "");
   // Tolera APP_URL cargada sin protocolo ("mi-app.vercel.app"): se asume https.

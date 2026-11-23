@@ -31,7 +31,12 @@ export async function signInWithPassword(email, password) {
 
 /** Crea la cuenta. needsCode = hay que confirmar el email con el código; alreadyRegistered = el email ya existía. */
 export async function signUp(email, password) {
-  const { data, error } = await getSupabase().auth.signUp({ email: email.trim(), password });
+  const { data, error } = await getSupabase().auth.signUp({
+    email: email.trim(),
+    password,
+    // Si la plantilla de Supabase manda un link (la de fábrica) en vez del código, vuelve acá y entra al panel.
+    options: { emailRedirectTo: `${origin()}/auth/confirm?type=signup&next=/panel` },
+  });
   if (error) fail(error, "No pudimos crear la cuenta.");
   const alreadyRegistered = Array.isArray(data.user?.identities) && data.user.identities.length === 0;
   return { needsCode: !data.session && !alreadyRegistered, alreadyRegistered };
@@ -43,7 +48,11 @@ export async function verifySignupCode(email, code) {
 }
 
 export async function resendSignupCode(email) {
-  const { error } = await getSupabase().auth.resend({ type: "signup", email: email.trim() });
+  const { error } = await getSupabase().auth.resend({
+    type: "signup",
+    email: email.trim(),
+    options: { emailRedirectTo: `${origin()}/auth/confirm?type=signup&next=/panel` },
+  });
   if (error) fail(error, "No pudimos reenviar el código.");
 }
 

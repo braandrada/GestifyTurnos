@@ -3,14 +3,8 @@ import { z } from "zod";
 import { appOrigin } from "@/lib/app-url.server";
 import { requireSuperAdmin } from "@/lib/auth-middleware";
 import { runAutomations } from "@/lib/automations.server";
-import { slugify } from "@/lib/format";
+import { checkSlug } from "@/lib/slugs";
 import { dbFail, supabaseAdmin, unwrap } from "@/lib/supabase.server";
-
-// Coinciden con rutas de la app; misma lista que la constraint tenants_slug_reservado (migración 004).
-const RESERVED_SLUGS = new Set([
-  "admin", "panel", "login", "register", "mfa", "api", "pago", "auth",
-  "forgot-password", "reset-password", "www", "app", "assets", "static",
-]);
 
 export const provisionTenant = createServerFn({ method: "POST" })
   .middleware([requireSuperAdmin])
@@ -30,9 +24,8 @@ export const provisionTenant = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const db = supabaseAdmin();
     const email = data.email.trim().toLowerCase();
-    const slug = slugify(data.slug || data.nombre_comercio);
-    if (!slug) throw new Error("El slug no es válido");
-    if (RESERVED_SLUGS.has(slug)) throw new Error(`"${slug}" es una dirección reservada de la plataforma. Elegí otro slug.`);
+    const { slug, error: slugError } = checkSlug(data.slug || data.nombre_comercio);
+    if (slugError) throw new Error(slugError);
 
     const taken = unwrap(await db.from("tenants").select("id").eq("slug", slug).maybeSingle());
     if (taken) throw new Error("Ese slug ya está en uso, elegí otro");

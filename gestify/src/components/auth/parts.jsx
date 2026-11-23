@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GoogleIcon } from "./GoogleIcon";
@@ -31,9 +32,29 @@ export function SubmitButton({ busy, busyLabel, children, ...props }) {
   );
 }
 
+// Proveedores de login activos en el proyecto de Supabase (endpoint público con la clave anónima).
+function useAuthProviders() {
+  return useQuery({
+    queryKey: ["auth-providers"],
+    queryFn: async () => {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/settings`, {
+        headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      });
+      if (!response.ok) return {};
+      return (await response.json()).external || {};
+    },
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/** Botón de Google + separador "o". No se muestra si Google no está habilitado en Supabase. */
 export function GoogleButton({ returnTo, onError }) {
+  const { data: providers } = useAuthProviders();
+  if (!providers?.google) return null;
   return (
-    <Button
+    <>
+      <Button
       type="button"
       variant="outline"
       className="mb-6 h-12 w-full text-sm font-medium"
@@ -41,7 +62,9 @@ export function GoogleButton({ returnTo, onError }) {
     >
       <GoogleIcon className="mr-2 h-5 w-5" />
       Continuar con Google
-    </Button>
+      </Button>
+      <OrDivider />
+    </>
   );
 }
 
