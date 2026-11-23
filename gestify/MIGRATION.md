@@ -54,3 +54,12 @@
   Autorizar el débito ya no reactiva una cuenta suspendida. La seña se valida igual en el webhook y en `/pago/:codigo`.
 - Agenda: bloqueos (`blocks`, migración 004), slots de a 30 min como máximo, anticipación mínima de 15 min, horizonte de 60 días
   y máximo 2 reservas impagas por teléfono. Los teléfonos se guardan en formato WhatsApp (549…), ver `src/lib/phone.js`.
+
+## Profesionales (migración 005)
+- Tablas `staff` y `staff_services` (sin servicios marcados = hace todos). `staff_id` en `schedules` (horarios propios;
+  sin franjas propias usa las del local), `blocks` (bloqueo de un profesional o del local entero) y `appointments`.
+- Anti doble reserva por profesional (`appointments_no_overlap_staff`); los turnos sin profesional siguen siendo uno a la vez por local.
+- Reserva pública: chips "¿Con quién?" con "Cualquiera". Con "Cualquiera" se asigna el primer profesional libre, y si se ocupó
+  en el medio se reintenta con el siguiente.
+- Un profesional con turnos no se borra: se desactiva (FK `on delete restrict`).
+- Sin la 005 corrida, el código funciona como "local sin profesionales" (ver `hasStaffSchema` en `booking.functions.js`).

@@ -93,6 +93,12 @@ function PaymentStatusPage() {
             <span className="text-muted-foreground">Servicio</span>
             <span className="text-right font-medium">{data.servicio_nombre}</span>
           </div>
+          {data.staff_nombre ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Te atiende</span>
+              <span className="text-right font-medium">{data.staff_nombre}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-3">
             <span className="text-muted-foreground">Fecha y hora</span>
             <span className="text-right font-medium">{formatDateTime(data.fecha_hora_inicio)}</span>

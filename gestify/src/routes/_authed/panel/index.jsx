@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Clock3, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useStaff } from "@/hooks/useStaff";
 import AppointmentList from "@/components/admin/AppointmentList";
 import SubscriptionBanner from "@/components/admin/SubscriptionBanner";
 import { unwrapDb } from "@/lib/db-errors";
@@ -16,6 +18,8 @@ function Dashboard() {
   const { data: merchant } = useMerchant();
   const tenantId = merchant?.tenant?.id;
   const queryClient = useQueryClient();
+  const { data: staff = [] } = useStaff(tenantId);
+  const [staffFilter, setStaffFilter] = useState("todos");
 
   const { data: appointments = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["appointments", tenantId],
@@ -27,9 +31,8 @@ function Dashboard() {
       return unwrapDb(
         await getSupabase()
           .from("appointments")
-          .select(
-            "id, cliente_nombre, cliente_telefono, servicio_nombre, fecha_hora_inicio, fecha_hora_fin, estado, monto_sena, expira_pago_en, mp_payment_id, notas",
-          )
+          // "*" y no una lista de columnas: staff_id/staff_nombre existen solo con la migración 005.
+          .select("*")
           .eq("tenant_id", tenantId)
           .gte("fecha_hora_inicio", monthStart.toISOString())
           .order("fecha_hora_inicio", { ascending: true })
@@ -56,7 +59,8 @@ function Dashboard() {
 
   const now = new Date();
   const todayKey = dateKeyOf(now.toISOString());
-  const activos = appointments.filter((a) => a.estado === "confirmado" || a.estado === "pendiente_pago");
+  const delFiltro = (a) => staffFilter === "todos" || (a.staff_id ?? "sin") === staffFilter;
+  const activos = appointments.filter((a) => (a.estado === "confirmado" || a.estado === "pendiente_pago") && delFiltro(a));
   // Hoy: todos los turnos del día (también los que ya pasaron). Próximos: de mañana en adelante.
   const hoy = activos.filter((a) => dateKeyOf(a.fecha_hora_inicio) === todayKey);
   const proximos = activos
@@ -83,6 +87,28 @@ function Dashboard() {
       </div>
 
       <SubscriptionBanner subscription={merchant?.subscription} />
+
+      {staff.length ? (
+        <div className="flex items-center gap-2">
+          <label htmlFor="filtro-staff" className="text-sm text-muted-foreground">
+            Ver agenda de
+          </label>
+          <select
+            id="filtro-staff"
+            value={staffFilter}
+            onChange={(event) => setStaffFilter(event.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="todos">Todo el equipo</option>
+            {staff.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.nombre}
+              </option>
+            ))}
+            <option value="sin">Sin profesional asignado</option>
+          </select>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3">
         {stats.map(({ label, value, icon: Icon }) => (

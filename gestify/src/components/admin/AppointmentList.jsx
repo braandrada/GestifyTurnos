@@ -12,6 +12,8 @@ const ESTADOS = {
 
 function reminderText(appointment, tenantName) {
   return `Hola ${appointment.cliente_nombre}! Te recordamos tu turno de ${appointment.servicio_nombre || "servicio"}${
+    appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""
+  }${
     tenantName ? ` en ${tenantName}` : ""
   } el ${formatDateTime(appointment.fecha_hora_inicio)}. Si no podés venir, avisanos por acá.`;
 }
@@ -56,7 +58,8 @@ export default function AppointmentList({ appointments, onChangeEstado, emptyTex
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{appointment.cliente_nombre}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {appointment.servicio_nombre || "Servicio"} · {appointment.cliente_telefono}
+                      {appointment.servicio_nombre || "Servicio"}
+                      {appointment.staff_nombre ? ` · con ${appointment.staff_nombre}` : ""} · {appointment.cliente_telefono}
                       {appointment.monto_sena > 0 ? ` · seña ${formatMoney(appointment.monto_sena)}` : ""}
                     </p>
                   </div>

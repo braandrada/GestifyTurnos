@@ -91,3 +91,54 @@ export function buildSlots({ dateKey, durationMinutes, schedules, appointments, 
   const unique = new Map(slots.map((slot) => [slot.start, slot]));
   return [...unique.values()].sort((a, b) => a.start.localeCompare(b.start));
 }
+
+/**
+ * Disponibilidad con profesionales.
+ *
+ *  - `usesStaff` false (comercio sin profesionales): igual que siempre, horarios del local y todos los turnos.
+ *  - `usesStaff` true: se calcula por profesional elegible y se unen los resultados. Cada slot trae `staffIds`
+ *    con los profesionales libres en ese horario (ordenados como `staff`).
+ *    · Horarios: las franjas propias del profesional; si no tiene ninguna activa, las del local.
+ *    · Turnos: los suyos + los "del local" (sin profesional), que por prudencia bloquean a todos.
+ *    · Bloqueos: los del local entero + los suyos.
+ *  - `staffId`: limita a ese profesional (si no es elegible, no hay slots).
+ */
+export function buildAvailability({
+  dateKey,
+  durationMinutes,
+  schedules,
+  appointments,
+  blocks = [],
+  usesStaff = false,
+  staff = [],
+  staffId = null,
+  now = new Date(),
+  minStart = now,
+}) {
+  const base = { dateKey, durationMinutes, now, minStart };
+  const localSchedules = schedules.filter((schedule) => !schedule.staff_id);
+
+  if (!usesStaff) {
+    return buildSlots({ ...base, schedules: localSchedules, appointments, blocks }).map((slot) => ({ ...slot, staffIds: [] }));
+  }
+
+  const candidates = staffId ? staff.filter((member) => member.id === staffId) : staff;
+  const byStart = new Map();
+
+  for (const member of candidates) {
+    const own = schedules.filter((schedule) => schedule.staff_id === member.id && schedule.activo !== false);
+    const memberSlots = buildSlots({
+      ...base,
+      schedules: own.length ? own : localSchedules,
+      appointments: appointments.filter((appointment) => !appointment.staff_id || appointment.staff_id === member.id),
+      blocks: blocks.filter((block) => !block.staff_id || block.staff_id === member.id),
+    });
+    for (const slot of memberSlots) {
+      const entry = byStart.get(slot.start) || { ...slot, staffIds: [] };
+      entry.staffIds.push(member.id);
+      byStart.set(slot.start, entry);
+    }
+  }
+
+  return [...byStart.values()].sort((a, b) => a.start.localeCompare(b.start));
+}

@@ -15,7 +15,7 @@ const DAY_MS = 24 * 3600 * 1000;
 
 function emptyForm() {
   const today = dateKeyOf(new Date().toISOString());
-  return { desde: today, hasta: today, diaCompleto: true, horaInicio: "13:00", horaFin: "15:00", motivo: "" };
+  return { desde: today, hasta: today, diaCompleto: true, horaInicio: "13:00", horaFin: "15:00", motivo: "", staffId: "" };
 }
 
 // Arma el rango [inicio, fin) en hora de Argentina a partir del formulario.
@@ -28,7 +28,7 @@ function toRange(form) {
 }
 
 /** Bloqueos de agenda: días o franjas puntuales en los que el portal no ofrece turnos. */
-export default function BlocksSection({ tenantId }) {
+export default function BlocksSection({ tenantId, staff = [] }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -39,7 +39,7 @@ export default function BlocksSection({ tenantId }) {
       unwrapDb(
         await getSupabase()
           .from("blocks")
-          .select("id, inicio, fin, motivo")
+          .select("*")
           .eq("tenant_id", tenantId)
           .gte("fin", new Date().toISOString())
           .order("inicio", { ascending: true })
@@ -62,7 +62,13 @@ export default function BlocksSection({ tenantId }) {
       unwrapDb(
         await getSupabase()
           .from("blocks")
-          .insert({ tenant_id: tenantId, inicio: inicio.toISOString(), fin: fin.toISOString(), motivo: form.motivo.trim() || null }),
+          .insert({
+            tenant_id: tenantId,
+            inicio: inicio.toISOString(),
+            fin: fin.toISOString(),
+            motivo: form.motivo.trim() || null,
+            ...(form.staffId ? { staff_id: form.staffId } : {}),
+          }),
       );
       setForm(emptyForm());
       toast.success("Bloqueo agregado: esos horarios ya no se ofrecen en el portal.");
@@ -85,6 +91,7 @@ export default function BlocksSection({ tenantId }) {
 
   const set = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   const blocks = blocksQuery.data || [];
+  const staffName = Object.fromEntries(staff.map((member) => [member.id, member.nombre]));
 
   return (
     <section className="space-y-4">
@@ -128,6 +135,24 @@ export default function BlocksSection({ tenantId }) {
             </div>
           )}
         </div>
+        {staff.length ? (
+          <div className="mt-3 space-y-1.5">
+            <Label htmlFor="bloqueo-quien">¿A quién afecta?</Label>
+            <select
+              id="bloqueo-quien"
+              value={form.staffId}
+              onChange={set("staffId")}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Todo el local</option>
+              {staff.map((member) => (
+                <option key={member.id} value={member.id}>
+                  Solo {member.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="mt-3 space-y-1.5">
           <Label htmlFor="bloqueo-motivo">Motivo (opcional, solo lo ves vos)</Label>
           <Input id="bloqueo-motivo" maxLength={200} placeholder="Feriado, vacaciones…" value={form.motivo} onChange={set("motivo")} />
@@ -159,7 +184,11 @@ export default function BlocksSection({ tenantId }) {
                 <p className="text-sm font-medium">
                   {formatDateTime(block.inicio)} → {formatDateTime(block.fin)}
                 </p>
-                {block.motivo ? <p className="truncate text-xs text-muted-foreground">{block.motivo}</p> : null}
+                <p className="truncate text-xs text-muted-foreground">
+                  {[staffName[block.staff_id] ? `Solo ${staffName[block.staff_id]}` : staff.length ? "Todo el local" : "", block.motivo]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
               </div>
               <Button
                 variant="ghost"

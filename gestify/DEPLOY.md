@@ -7,8 +7,8 @@
 - Cuentas necesarias: GitHub, Vercel, Supabase, Mercado Pago (aplicación en "Tus integraciones") y un proveedor de correo para el SMTP.
 
 ## 1. Supabase
-1. Proyecto nuevo (o de prueba). Correr en **SQL Editor**, en orden: `supabase/migrations/001_...`, `002_...`, `003_...` y `004_...`
-   (la 004 agrega los bloqueos de agenda y protege el slug; si ya tenías corridas las tres primeras, corré solo la 004).
+1. Proyecto nuevo (o de prueba). Correr en **SQL Editor**, en orden: `supabase/migrations/001_...`, `002_...`, `003_...`, `004_...` y `005_...`
+   (la 004 agrega bloqueos de agenda y protege el slug; la 005, profesionales. Corré solo las que te falten, en orden).
 2. **Project Settings > API**: copiar la URL, la clave pública (anon/publishable) y la `service_role` (secreta).
 3. Configurar **Auth** según `MIGRATION.md` (plantillas, Google, SMTP propio, TOTP). Las *Redirect URLs* se completan en el paso 4, cuando ya sepas tu dominio.
 

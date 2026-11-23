@@ -50,7 +50,7 @@ export async function confirmAppointment({ appointment, paymentId, tenant }) {
     appointment.cliente_telefono,
     `Hola ${appointment.cliente_nombre}! Recibimos tu seña. Tu turno de ${
       appointment.servicio_nombre || "servicio"
-    } en ${comercio?.nombre_comercio || "el local"} quedó confirmado para el ${formatDateTime(
+    }${appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""} en ${comercio?.nombre_comercio || "el local"} quedó confirmado para el ${formatDateTime(
       appointment.fecha_hora_inicio,
     )}.`,
   );

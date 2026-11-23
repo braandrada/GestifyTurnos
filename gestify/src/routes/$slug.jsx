@@ -34,6 +34,7 @@ function BookingPage() {
   const [service, setService] = useState(null);
   const [dateKey, setDateKey] = useState(days[0].dateKey);
   const [slot, setSlot] = useState(null);
+  const [staffId, setStaffId] = useState(null); // null = "Cualquiera"
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -48,9 +49,19 @@ function BookingPage() {
   const data = tenantQuery.data;
   const tenant = data?.tenant;
 
+  // Profesionales que hacen el servicio elegido (serviceIds vacío = hace todos).
+  const staffForService = useMemo(
+    () =>
+      (data?.staff || []).filter(
+        (member) => !member.serviceIds?.length || (service && member.serviceIds.includes(service.id)),
+      ),
+    [data?.staff, service],
+  );
+  const staffElegido = staffForService.find((member) => member.id === staffId) || null;
+
   const availability = useQuery({
-    queryKey: ["availability", slug, service?.id, dateKey],
-    queryFn: () => getAvailability({ data: { slug, serviceId: service.id, dateKey } }),
+    queryKey: ["availability", slug, service?.id, dateKey, staffId],
+    queryFn: () => getAvailability({ data: { slug, serviceId: service.id, dateKey, staffId } }),
     enabled: Boolean(service?.id && dateKey),
   });
 
@@ -65,6 +76,7 @@ function BookingPage() {
           slug,
           serviceId: service.id,
           startIso: slot.start,
+          staffId,
           clienteNombre: nombre,
           clienteTelefono: telefono,
           origin: window.location.origin,
@@ -197,6 +209,12 @@ function BookingPage() {
                 <span className="text-muted-foreground">Servicio</span>
                 <span className="text-right font-medium">{service?.nombre || "—"}</span>
               </div>
+              {staffForService.length > 1 ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Profesional</span>
+                  <span className="text-right font-medium">{staffElegido?.nombre || "Cualquiera"}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Horario</span>
                 <span className="text-right font-medium">
@@ -250,6 +268,10 @@ function BookingPage() {
                       onSelect={(next) => {
                         setService(next);
                         setSlot(null);
+                        setStaffId((current) => {
+                          const member = (data.staff || []).find((m) => m.id === current);
+                          return member && (!member.serviceIds?.length || member.serviceIds.includes(next.id)) ? current : null;
+                        });
                         setStep(1);
                       }}
                     />
@@ -265,6 +287,37 @@ function BookingPage() {
               {step === 1 ? (
                 <div>
                   <h2 className="text-xl">Elegí día y horario</h2>
+                  {staffForService.length > 1 ? (
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs text-muted-foreground">¿Con quién?</p>
+                      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="radiogroup" aria-label="Profesional">
+                        {[{ id: null, nombre: "Cualquiera" }, ...staffForService].map((member) => {
+                          const active = staffId === member.id;
+                          return (
+                            <button
+                              key={member.id ?? "any"}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => {
+                                setStaffId(member.id);
+                                setSlot(null);
+                              }}
+                              className={`shrink-0 rounded-full border px-4 py-2 text-sm transition-colors ${
+                                active
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                              }`}
+                            >
+                              {member.nombre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : staffForService.length === 1 ? (
+                    <p className="mt-2 text-sm text-muted-foreground">Te atiende {staffForService[0].nombre}.</p>
+                  ) : null}
                   <div className="mt-4">
                     <TimeSlotPicker
                       days={days}
