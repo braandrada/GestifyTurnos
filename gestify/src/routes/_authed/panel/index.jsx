@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Clock3, Plus, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import NewAppointmentDialog from "@/components/admin/NewAppointmentDialog";
+import WeekCalendar from "@/components/admin/WeekCalendar";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
@@ -23,6 +24,13 @@ function Dashboard() {
   const { data: staff = [] } = useStaff(tenantId);
   const [staffFilter, setStaffFilter] = useState("todos");
   const [nuevoOpen, setNuevoOpen] = useState(false);
+  const [vista, setVista] = useState("lista"); // "lista" | "semana"
+  // Refresca la lista y la vista semanal después de cualquier cambio.
+  const refreshAgenda = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] }),
+      queryClient.invalidateQueries({ queryKey: ["appointments-week", tenantId] }),
+    ]);
 
   const { data: appointments = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["appointments", tenantId],
@@ -54,7 +62,7 @@ function Dashboard() {
       const patch = estado === "confirmado" ? { estado, expira_pago_en: null } : { estado };
       unwrapDb(await getSupabase().from("appointments").update(patch).eq("id", appointment.id));
       toast.success(estado === "confirmado" ? "Turno confirmado" : "Turno cancelado");
-      queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] });
+      refreshAgenda();
     } catch (error) {
       toast.error(error.message);
     }
@@ -100,7 +108,7 @@ function Dashboard() {
         onOpenChange={setNuevoOpen}
         tenant={merchant?.tenant}
         staff={staff}
-        onCreated={() => queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] })}
+        onCreated={refreshAgenda}
       />
 
       <SubscriptionBanner subscription={merchant?.subscription} />
@@ -161,7 +169,34 @@ function Dashboard() {
         </p>
       ) : null}
 
-      {isLoading ? (
+      <div className="inline-flex rounded-full border border-border bg-card p-1" role="tablist" aria-label="Vista de la agenda">
+        {[
+          ["lista", "Lista"],
+          ["semana", "Semana"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={vista === value}
+            onClick={() => setVista(value)}
+            className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
+              vista === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {vista === "semana" ? (
+        <WeekCalendar
+          tenantId={tenantId}
+          tenantName={merchant?.tenant?.nombre_comercio}
+          filter={delFiltro}
+          onChangeEstado={changeEstado}
+        />
+      ) : isLoading ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
           Cargando agenda…
         </div>

@@ -4,7 +4,7 @@ import { getSupabase } from "@/lib/supabase-browser";
 const MESSAGES = [
   [/rate limit|too many|security purposes/i, "Demasiados intentos. Esperá unos minutos y probá de nuevo."],
   [/invalid login credentials/i, "Email o contraseña incorrectos."],
-  [/email not confirmed/i, "Todavía no confirmaste tu email. Registrate de nuevo para recibir un código."],
+  [/email not confirmed/i, "Tu cuenta quedó a medio crear con el sistema anterior. Usá \"Recuperar contraseña\" o escribinos para activarla."],
   [/already registered|already been registered/i, "Ese email ya tiene una cuenta. Ingresá o recuperá tu contraseña."],
   [/same password|different from the old/i, "Elegí una contraseña distinta a la anterior."],
   [/weak|pwned|easy to guess/i, "Esa contraseña es muy débil. Probá con una más larga y difícil."],
