@@ -1,19 +1,17 @@
 import { Lock, Mail, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, GoogleButton, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
-import { resendSignupCode, signUp, verifySignupCode } from "@/lib/auth-browser";
+import { signInWithPassword } from "@/lib/auth-browser";
+import { registerAccount } from "@/lib/signup.functions";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 const MIN_PASSWORD = 8;
 
 /**
- * Página /register: formulario → código de 6 dígitos que llega por email → sesión iniciada.
- * Funciona con las dos plantillas de "Confirm signup" de Supabase: código ({{ .Token }}) o link (la de fábrica).
+ * Página /register: email + contraseña → cuenta creada y sesión iniciada al instante (sin confirmar el email).
  */
 export function RegisterPage() {
   const returnTo = safeReturnTo();
@@ -21,7 +19,6 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [otpCode, setOtpCode] = useState("");
   const [step, setStep] = useState("form");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,10 +36,14 @@ export function RegisterPage() {
     }
     setBusy(true);
     try {
-      const result = await signUp(email, password);
-      if (result.alreadyRegistered) setStep("already_registered");
-      else if (result.needsCode) setStep("otp");
-      else window.location.href = destination; // el proyecto no exige confirmar el email
+      // La cuenta se crea ya confirmada en el servidor (sin email ni código) y se inicia sesión acá mismo.
+      const result = await registerAccount({ data: { email, password } });
+      if (result.alreadyRegistered) {
+        setStep("already_registered");
+        return;
+      }
+      await signInWithPassword(email, password);
+      window.location.href = destination;
     } catch (err) {
       setError(err.message);
     } finally {
@@ -50,28 +51,7 @@ export function RegisterPage() {
     }
   }
 
-  async function verify(e) {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    try {
-      await verifySignupCode(email, otpCode);
-      window.location.href = destination;
-    } catch (err) {
-      setError(err.message);
-      setBusy(false);
-    }
-  }
 
-  async function resend() {
-    setError("");
-    try {
-      await resendSignupCode(email);
-      toast("Código enviado", { description: "Revisá tu email: te mandamos un código nuevo." });
-    } catch (err) {
-      setError(err.message);
-    }
-  }
 
   if (step === "already_registered") {
     return (
@@ -91,37 +71,6 @@ export function RegisterPage() {
     );
   }
 
-  if (step === "otp") {
-    return (
-      <AuthLayout icon={UserPlus} title="Confirmá tu email" subtitle="Es el último paso">
-        <form onSubmit={verify}>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Te enviamos un email a <span className="font-medium text-foreground">{email}</span>. Ingresá el código de 6 dígitos o
-            tocá el link del email (abrilo en este mismo navegador). Si no lo ves, revisá spam.
-          </p>
-          <AuthError>{error}</AuthError>
-          <div className="mb-6 flex justify-center">
-            <InputOTP maxLength={6} value={otpCode} onChange={setOtpCode} autoFocus autoComplete="one-time-code">
-              <InputOTPGroup>
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <InputOTPSlot key={i} index={i} />
-                ))}
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-          <SubmitButton busy={busy} busyLabel="Verificando…" disabled={busy || otpCode.length < 6}>
-            Verificar
-          </SubmitButton>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            ¿No te llegó el código?{" "}
-            <button type="button" onClick={resend} className="font-medium text-primary hover:underline">
-              Reenviar
-            </button>
-          </p>
-        </form>
-      </AuthLayout>
-    );
-  }
 
   return (
     <AuthLayout icon={UserPlus} title="Creá tu cuenta" subtitle="Empezá a recibir turnos online">

@@ -1,13 +1,27 @@
 import { bookingLink } from "@/lib/app-url.server";
 import { formatDateTime } from "@/lib/format";
+import { supabaseAdmin } from "@/lib/supabase.server";
+import { sendWhatsAppMessage } from "@/lib/whatsapp.server";
+
+/** Aviso al comercio en su propio WhatsApp (si tiene el envío configurado). Nunca falla. */
+export async function notifyMerchant(tenant, text) {
+  if (tenant?.id && tenant.telefono_whatsapp) {
+    await sendWhatsAppMessage(tenant.id, tenant.telefono_whatsapp, text).catch(() => null);
+  }
+}
+
+/** Texto del aviso de reserva nueva para el comercio. */
+export function newBookingText(appointment, { conSena = false } = {}) {
+  return `Nueva reserva${conSena ? " (seña pagada)" : ""}: ${appointment.cliente_nombre} · ${appointment.servicio_nombre || "servicio"}${
+    appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""
+  } · ${formatDateTime(appointment.fecha_hora_inicio)}${appointment.cliente_telefono ? ` · tel. ${appointment.cliente_telefono}` : ""}.`;
+}
 
 /** " Para cambiar o cancelar: <link>" (vacío si no se puede armar el link). */
 export function manageText(codigo) {
   const link = codigo ? bookingLink(codigo) : null;
   return link ? ` Para cambiar o cancelar tu turno: ${link}` : "";
 }
-import { supabaseAdmin } from "@/lib/supabase.server";
-import { sendWhatsAppMessage } from "@/lib/whatsapp.server";
 
 /**
  * Pasa un turno a "confirmado" cuando Mercado Pago aprobó la seña. Lo usan el webhook y la
@@ -49,7 +63,7 @@ export async function confirmAppointment({ appointment, paymentId, tenant }) {
 
   let comercio = tenant;
   if (!comercio) {
-    const result = await db.from("tenants").select("nombre_comercio").eq("id", appointment.tenant_id).maybeSingle();
+    const result = await db.from("tenants").select("id, nombre_comercio, telefono_whatsapp").eq("id", appointment.tenant_id).maybeSingle();
     comercio = result.data;
   }
   await sendWhatsAppMessage(
@@ -61,5 +75,6 @@ export async function confirmAppointment({ appointment, paymentId, tenant }) {
       appointment.fecha_hora_inicio,
     )}.${manageText(appointment.codigo_publico)}`,
   );
+  await notifyMerchant(comercio, newBookingText(appointment, { conSena: true }));
   return { confirmed: true };
 }

@@ -33,6 +33,8 @@ async function loadCurrentUser() {
       id: data.user.id,
       email: (data.user.email || "").toLowerCase(),
       email_confirmed_at: data.user.email_confirmed_at || null,
+      // Registro sin confirmación por email (signup.functions): el email no está comprobado.
+      email_sin_verificar: data.user.app_metadata?.email_sin_verificar === true,
       full_name: profile?.full_name || data.user.user_metadata?.full_name || "",
     },
     profile: profile || null,

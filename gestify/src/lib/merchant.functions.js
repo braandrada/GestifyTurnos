@@ -52,7 +52,9 @@ export const ensureMerchantAccess = createServerFn({ method: "POST" })
 
     let tenant = unwrap(await db.from("tenants").select("*").eq("owner_id", user.id).maybeSingle());
 
-    if (!tenant && user.email_confirmed_at) {
+    // Solo con el email realmente comprobado (invitación, link de confirmación o Google). Una cuenta creada
+    // sin confirmar el email no puede apropiarse de un comercio dado de alta con ese email.
+    if (!tenant && user.email_confirmed_at && !user.email_sin_verificar) {
       const candidate = unwrap(
         await db
           .from("tenants")
