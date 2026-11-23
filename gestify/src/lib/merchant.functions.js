@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/auth-middleware";
 import { platformToken } from "@/lib/billing.server";
 import { getMpUser } from "@/lib/mercadopago.server";
 import { assertSafeWebhookUrl } from "@/lib/safe-url.server";
-import { supabaseAdmin, unwrap } from "@/lib/supabase.server";
+import { toWhatsAppNumber } from "@/lib/phone";
+import { checkSlug } from "@/lib/slugs";
+import { dbFail, supabaseAdmin, unwrap } from "@/lib/supabase.server";
 
 // Lo que el navegador puede saber de las integraciones: NUNCA los tokens, solo si están cargados.
 function integrationStatus(row) {
@@ -157,4 +159,91 @@ export const saveIntegration = createServerFn({ method: "POST" })
         .single(),
     );
     return { ok: true, integration: integrationStatus(saved) };
+  });
+
+// Período de prueba del autoregistro y precio inicial del abono (lo puede cambiar el super admin después).
+const trialDays = () => Math.min(Math.max(Number(process.env.TRIAL_DAYS) || 14, 1), 90);
+const defaultMonthlyPrice = () => Math.max(Number(process.env.DEFAULT_MONTHLY_PRICE) || 0, 0);
+
+/**
+ * Autoregistro: un usuario con email confirmado y sin comercio crea el suyo, con período de prueba.
+ * El dueño sale de la sesión (nunca del navegador) y se permite un solo comercio por usuario.
+ */
+export const createOwnTenant = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(
+    z.object({
+      nombre_comercio: z.string().trim().min(2, "Ingresá el nombre del local").max(120),
+      rubro: z.string().trim().min(2, "Elegí el rubro").max(60),
+      slug: z.string().trim().max(60).optional(),
+      telefono_whatsapp: z.string().trim().max(40).optional(),
+      direccion: z.string().trim().max(200).optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { user, profile } = context;
+    if (profile?.tipo_usuario === "super_admin") throw new Error("El administrador de la plataforma no tiene comercio propio.");
+    if (!user.email_confirmed_at) throw new Error("Confirmá tu email antes de crear tu comercio.");
+
+    const db = supabaseAdmin();
+    const existing = unwrap(await db.from("tenants").select("id").eq("owner_id", user.id).limit(1).maybeSingle());
+    if (existing || profile?.tenant_id) throw new Error("Tu cuenta ya tiene un comercio. Recargá la página.");
+
+    const { slug, error: slugError } = checkSlug(data.slug || data.nombre_comercio);
+    if (slugError) throw new Error(slugError);
+
+    let telefono = "";
+    if (data.telefono_whatsapp) {
+      telefono = toWhatsAppNumber(data.telefono_whatsapp);
+      if (!telefono) throw new Error("Revisá el WhatsApp del local: con código de área, por ejemplo 11 5555 5555.");
+    }
+
+    const inserted = await db
+      .from("tenants")
+      .insert({
+        slug,
+        nombre_comercio: data.nombre_comercio,
+        rubro: data.rubro,
+        direccion: data.direccion || "",
+        telefono_whatsapp: telefono,
+        politica_sena: "La seña no es reembolsable si cancelás con menos de 24 horas de anticipación.",
+        horas_aviso_previo: 24,
+        owner_id: user.id,
+        owner_email: user.email,
+        activo: true,
+        notas: `Autoregistro de ${user.email} (prueba de ${trialDays()} días)`,
+      })
+      .select("*")
+      .single();
+    if (inserted.error) {
+      if (inserted.error.code === "23505") throw new Error(`La dirección "${slug}" ya está en uso. Probá con otra (por ejemplo ${slug}-centro).`);
+      if (inserted.error.code === "23514") throw new Error("Esa dirección no está permitida. Probá con otra.");
+      throw dbFail(inserted.error, "No pudimos crear tu comercio. Probá de nuevo.");
+    }
+    const tenant = inserted.data;
+
+    try {
+      unwrap(
+        await db.from("tenant_subscriptions").insert({
+          tenant_id: tenant.id,
+          precio_mensual: defaultMonthlyPrice(),
+          estado_suscripcion: "activa",
+          fecha_vencimiento_actual: new Date(Date.now() + trialDays() * 86400000).toISOString(),
+        }),
+      );
+      unwrap(await db.from("tenant_integrations").insert({ tenant_id: tenant.id, whatsapp_activo: true }));
+      unwrap(
+        await db.from("schedules").insert([
+          ...[1, 2, 3, 4, 5].map((dia) => ({ tenant_id: tenant.id, dia_semana: dia, hora_inicio: "09:00", hora_fin: "18:00", activo: true })),
+          { tenant_id: tenant.id, dia_semana: 6, hora_inicio: "09:00", hora_fin: "13:00", activo: true },
+        ]),
+      );
+      unwrap(await db.from("profiles").update({ tenant_id: tenant.id, tipo_usuario: "comerciante" }).eq("id", user.id));
+    } catch (error) {
+      // alta a medias: se deshace (las tablas hijas se borran en cascada)
+      await db.from("tenants").delete().eq("id", tenant.id);
+      throw dbFail(error?.cause || error, "No pudimos crear tu comercio. Probá de nuevo.");
+    }
+
+    return { ok: true, slug: tenant.slug, dias_prueba: trialDays() };
   });

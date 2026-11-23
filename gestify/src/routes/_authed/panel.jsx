@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import CreateTenantForm from "@/components/admin/CreateTenantForm";
 import PanelShell from "@/components/admin/PanelShell";
 import { useMerchant } from "@/hooks/useMerchant";
 
@@ -40,19 +41,8 @@ function PanelLayout() {
     );
   }
 
-  if (merchant.data.role === "sin_comercio") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-3xl">Tu usuario no tiene un comercio asociado</h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Pedile a la plataforma que vincule tu cuenta con el local. Si sos el administrador, entrá al panel de
-            plataforma.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Usuario nuevo (autoregistro): crea su propio comercio.
+  if (merchant.data.role === "sin_comercio") return <CreateTenantForm />;
 
   return (
     <PanelShell tenant={merchant.data.tenant} subscription={merchant.data.subscription}>

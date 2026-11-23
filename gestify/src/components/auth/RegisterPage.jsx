@@ -2,7 +2,7 @@ import { Lock, Mail, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
+import { AuthError, AuthLink, GoogleButton, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ const MIN_PASSWORD = 8;
 
 /**
  * Página /register: formulario → código de 6 dígitos que llega por email → sesión iniciada.
- * (Requiere en Supabase: "Confirm email" activado y la plantilla "Confirm signup" con {{ .Token }}.)
+ * Funciona con las dos plantillas de "Confirm signup" de Supabase: código ({{ .Token }}) o link (la de fábrica).
  */
 export function RegisterPage() {
   const returnTo = safeReturnTo();
@@ -96,7 +96,8 @@ export function RegisterPage() {
       <AuthLayout icon={UserPlus} title="Confirmá tu email" subtitle="Es el último paso">
         <form onSubmit={verify}>
           <p className="mb-4 text-sm text-muted-foreground">
-            Te enviamos un código de 6 dígitos a <span className="font-medium text-foreground">{email}</span>.
+            Te enviamos un email a <span className="font-medium text-foreground">{email}</span>. Ingresá el código de 6 dígitos o
+            tocá el link del email (abrilo en este mismo navegador). Si no lo ves, revisá spam.
           </p>
           <AuthError>{error}</AuthError>
           <div className="mb-6 flex justify-center">
@@ -125,7 +126,6 @@ export function RegisterPage() {
   return (
     <AuthLayout icon={UserPlus} title="Creá tu cuenta" subtitle="Empezá a recibir turnos online">
       <GoogleButton returnTo={destination} onError={setError} />
-      <OrDivider />
       <AuthError>{error}</AuthError>
       <form onSubmit={register} className="space-y-4">
         <div className="space-y-2">

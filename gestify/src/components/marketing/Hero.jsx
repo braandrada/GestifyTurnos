@@ -30,8 +30,8 @@ export default function Hero() {
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg" className="rounded-full px-7">
-              <Link to="/login" search={{ returnTo: "/panel" }}>
-                Abrir mi panel
+              <Link to="/register" search={{ returnTo: "/panel" }}>
+                Crear mi cuenta gratis
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>

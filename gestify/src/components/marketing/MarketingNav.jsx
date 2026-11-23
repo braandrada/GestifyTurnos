@@ -27,7 +27,7 @@ export default function MarketingNav() {
             <Link to="/login" search={{ returnTo: "/panel" }}>Ingresar</Link>
           </Button>
           <Button asChild size="sm" className="rounded-full px-5">
-            <Link to="/login" search={{ returnTo: "/panel" }}>Abrir panel</Link>
+            <Link to="/register" search={{ returnTo: "/panel" }}>Crear cuenta</Link>
           </Button>
         </div>
       </div>
