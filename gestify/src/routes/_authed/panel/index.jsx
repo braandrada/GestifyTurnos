@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, Clock3, Wallet } from "lucide-react";
+import { CalendarCheck, Clock3, Plus, Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import NewAppointmentDialog from "@/components/admin/NewAppointmentDialog";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
@@ -20,6 +22,7 @@ function Dashboard() {
   const queryClient = useQueryClient();
   const { data: staff = [] } = useStaff(tenantId);
   const [staffFilter, setStaffFilter] = useState("todos");
+  const [nuevoOpen, setNuevoOpen] = useState(false);
 
   const { data: appointments = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["appointments", tenantId],
@@ -81,10 +84,24 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="label-micro">Panel del comercio</p>
-        <h1 className="mt-1 text-3xl">Agenda</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="label-micro">Panel del comercio</p>
+          <h1 className="mt-1 text-3xl">Agenda</h1>
+        </div>
+        <Button className="rounded-full" onClick={() => setNuevoOpen(true)} disabled={!tenantId}>
+          <Plus className="mr-1 h-4 w-4" />
+          Nuevo turno
+        </Button>
       </div>
+
+      <NewAppointmentDialog
+        open={nuevoOpen}
+        onOpenChange={setNuevoOpen}
+        tenant={merchant?.tenant}
+        staff={staff}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["appointments", tenantId] })}
+      />
 
       <SubscriptionBanner subscription={merchant?.subscription} />
 

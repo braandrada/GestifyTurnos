@@ -1,4 +1,11 @@
+import { bookingLink } from "@/lib/app-url.server";
 import { formatDateTime } from "@/lib/format";
+
+/** " Para cambiar o cancelar: <link>" (vacío si no se puede armar el link). */
+export function manageText(codigo) {
+  const link = codigo ? bookingLink(codigo) : null;
+  return link ? ` Para cambiar o cancelar tu turno: ${link}` : "";
+}
 import { supabaseAdmin } from "@/lib/supabase.server";
 import { sendWhatsAppMessage } from "@/lib/whatsapp.server";
 
@@ -52,7 +59,7 @@ export async function confirmAppointment({ appointment, paymentId, tenant }) {
       appointment.servicio_nombre || "servicio"
     }${appointment.staff_nombre ? ` con ${appointment.staff_nombre}` : ""} en ${comercio?.nombre_comercio || "el local"} quedó confirmado para el ${formatDateTime(
       appointment.fecha_hora_inicio,
-    )}.`,
+    )}.${manageText(appointment.codigo_publico)}`,
   );
   return { confirmed: true };
 }

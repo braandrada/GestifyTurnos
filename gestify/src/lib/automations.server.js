@@ -1,3 +1,4 @@
+import { manageText } from "@/lib/appointments.server";
 import { formatDateTime } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase.server";
 import { sendWhatsAppMessage } from "@/lib/whatsapp.server";
@@ -40,7 +41,7 @@ export async function runAutomations() {
   const proximos = await db
     .from("appointments")
     .select(
-      "id, tenant_id, cliente_nombre, cliente_telefono, servicio_nombre, fecha_hora_inicio, created_at, recordatorio_1_enviado, recordatorio_2_enviado, tenants(nombre_comercio, direccion, horas_aviso_previo)",
+      "id, codigo_publico, tenant_id, cliente_nombre, cliente_telefono, servicio_nombre, fecha_hora_inicio, created_at, recordatorio_1_enviado, recordatorio_2_enviado, tenants(nombre_comercio, direccion, horas_aviso_previo)",
     )
     .eq("estado", "confirmado")
     .gte("fecha_hora_inicio", now.toISOString())
@@ -64,7 +65,7 @@ export async function runAutomations() {
         const result = await sendWhatsAppMessage(
           appointment.tenant_id,
           appointment.cliente_telefono,
-          `${base} Si no podés asistir, avisanos con tiempo.`,
+          `${base} Si no podés asistir, avisanos con tiempo.${manageText(appointment.codigo_publico)}`,
         );
         if (result.sent) summary.recordatorios += 1;
         else await releaseReminder(db, appointment.id, "recordatorio_1_enviado");
