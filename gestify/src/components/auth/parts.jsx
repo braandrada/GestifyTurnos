@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GoogleIcon } from "./GoogleIcon";
-import { signInWithGoogle } from "@/lib/auth.client";
+import { signInWithGoogle } from "@/lib/auth-browser";
 import { returnToSearch } from "@/lib/authReturnTo";
 
 // Piezas que comparten las pantallas de autenticación.

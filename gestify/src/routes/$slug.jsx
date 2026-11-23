@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, CalendarX2, Loader2, MapPin, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import TimeSlotPicker, { dayChips } from "@/components/public/TimeSlotPicker";
 import DepositNoticeModal from "@/components/public/DepositNoticeModal";
 import { getAvailability, getPublicTenant, createBooking } from "@/lib/booking.functions";
 import { formatMoney } from "@/lib/format";
+import { toWhatsAppNumber, whatsAppLink } from "@/lib/phone";
 
 export const Route = createFileRoute("/$slug")({
   head: () => ({
@@ -26,12 +27,14 @@ const STEPS = ["Servicio", "Horario", "Tus datos"];
 function BookingPage() {
   const { slug } = Route.useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const days = useMemo(() => dayChips(14), []);
 
   const [step, setStep] = useState(0);
   const [service, setService] = useState(null);
   const [dateKey, setDateKey] = useState(days[0].dateKey);
   const [slot, setSlot] = useState(null);
+  const [staffId, setStaffId] = useState(null); // null = "Cualquiera"
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -46,9 +49,19 @@ function BookingPage() {
   const data = tenantQuery.data;
   const tenant = data?.tenant;
 
+  // Profesionales que hacen el servicio elegido (serviceIds vacío = hace todos).
+  const staffForService = useMemo(
+    () =>
+      (data?.staff || []).filter(
+        (member) => !member.serviceIds?.length || (service && member.serviceIds.includes(service.id)),
+      ),
+    [data?.staff, service],
+  );
+  const staffElegido = staffForService.find((member) => member.id === staffId) || null;
+
   const availability = useQuery({
-    queryKey: ["availability", slug, service?.id, dateKey],
-    queryFn: () => getAvailability({ data: { slug, serviceId: service.id, dateKey } }),
+    queryKey: ["availability", slug, service?.id, dateKey, staffId],
+    queryFn: () => getAvailability({ data: { slug, serviceId: service.id, dateKey, staffId } }),
     enabled: Boolean(service?.id && dateKey),
   });
 
@@ -63,6 +76,7 @@ function BookingPage() {
           slug,
           serviceId: service.id,
           startIso: slot.start,
+          staffId,
           clienteNombre: nombre,
           clienteTelefono: telefono,
           origin: window.location.origin,
@@ -74,16 +88,27 @@ function BookingPage() {
       }
       navigate({ to: "/pago/$codigo", params: { codigo: result.codigo } });
     } catch (err) {
-      setError(err.message || "No pudimos crear la reserva");
+      const message = err?.message || "No pudimos crear la reserva. Probá de nuevo.";
+      setError(message);
       setModalOpen(false);
       setSubmitting(false);
+      // Si el horario se ocupó mientras completaba los datos: se refrescan los horarios y vuelve a elegir.
+      if (/horario/i.test(message)) {
+        setSlot(null);
+        setStep(1);
+        queryClient.invalidateQueries({ queryKey: ["availability", slug] });
+      }
     }
   }
 
   function onConfirmClick(e) {
     e.preventDefault();
-    if (!nombre.trim() || !telefono.trim()) {
-      setError("Completá tu nombre y teléfono");
+    if (nombre.trim().length < 2) {
+      setError("Ingresá tu nombre y apellido");
+      return;
+    }
+    if (!toWhatsAppNumber(telefono)) {
+      setError("Revisá el teléfono: ingresalo con código de área, por ejemplo 11 5555 5555.");
       return;
     }
     if (requierePago) {
@@ -97,6 +122,21 @@ function BookingPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (tenantQuery.isError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+        <div className="max-w-sm text-center">
+          <h1 className="text-3xl">No pudimos cargar la agenda</h1>
+          <p className="mt-3 text-sm text-muted-foreground">Revisá tu conexión e intentá de nuevo.</p>
+          <Button className="mt-6 rounded-full" onClick={() => tenantQuery.refetch()} disabled={tenantQuery.isFetching}>
+            {tenantQuery.isFetching ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Reintentar
+          </Button>
+        </div>
       </div>
     );
   }
@@ -131,7 +171,11 @@ function BookingPage() {
           </p>
           {tenant.telefono_whatsapp ? (
             <Button asChild className="mt-6 rounded-full">
-              <a href={`https://wa.me/${String(tenant.telefono_whatsapp).replace(/[^\d]/g, "")}`} target="_blank" rel="noreferrer">
+              <a
+                href={whatsAppLink(tenant.telefono_whatsapp, `Hola ${tenant.nombre_comercio}! Quería coordinar un turno.`) || "#"}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Escribir por WhatsApp
               </a>
             </Button>
@@ -165,6 +209,12 @@ function BookingPage() {
                 <span className="text-muted-foreground">Servicio</span>
                 <span className="text-right font-medium">{service?.nombre || "—"}</span>
               </div>
+              {staffForService.length > 1 ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Profesional</span>
+                  <span className="text-right font-medium">{staffElegido?.nombre || "Cualquiera"}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Horario</span>
                 <span className="text-right font-medium">
@@ -218,6 +268,10 @@ function BookingPage() {
                       onSelect={(next) => {
                         setService(next);
                         setSlot(null);
+                        setStaffId((current) => {
+                          const member = (data.staff || []).find((m) => m.id === current);
+                          return member && (!member.serviceIds?.length || member.serviceIds.includes(next.id)) ? current : null;
+                        });
                         setStep(1);
                       }}
                     />
@@ -233,6 +287,37 @@ function BookingPage() {
               {step === 1 ? (
                 <div>
                   <h2 className="text-xl">Elegí día y horario</h2>
+                  {staffForService.length > 1 ? (
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs text-muted-foreground">¿Con quién?</p>
+                      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="radiogroup" aria-label="Profesional">
+                        {[{ id: null, nombre: "Cualquiera" }, ...staffForService].map((member) => {
+                          const active = staffId === member.id;
+                          return (
+                            <button
+                              key={member.id ?? "any"}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => {
+                                setStaffId(member.id);
+                                setSlot(null);
+                              }}
+                              className={`shrink-0 rounded-full border px-4 py-2 text-sm transition-colors ${
+                                active
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                              }`}
+                            >
+                              {member.nombre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : staffForService.length === 1 ? (
+                    <p className="mt-2 text-sm text-muted-foreground">Te atiende {staffForService[0].nombre}.</p>
+                  ) : null}
                   <div className="mt-4">
                     <TimeSlotPicker
                       days={days}
@@ -243,10 +328,20 @@ function BookingPage() {
                       }}
                       slots={availability.data?.slots || []}
                       loading={availability.isLoading}
+                      error={availability.isError}
+                      onRetry={() => availability.refetch()}
                       selected={slot}
-                      onSelect={setSlot}
+                      onSelect={(next) => {
+                        setSlot(next);
+                        setError("");
+                      }}
                     />
                   </div>
+                  {error ? (
+                    <p role="alert" className="mt-4 text-sm text-destructive">
+                      {error}
+                    </p>
+                  ) : null}
                   <div className="mt-6 flex items-center justify-between">
                     <Button variant="ghost" onClick={() => setStep(0)}>
                       <ArrowLeft className="mr-1 h-4 w-4" />
@@ -274,6 +369,7 @@ function BookingPage() {
                         value={nombre}
                         onChange={(e) => setNombre(e.target.value)}
                         placeholder="Camila Ferreyra"
+                        autoComplete="name"
                         className="h-11"
                         required
                       />
@@ -285,14 +381,20 @@ function BookingPage() {
                         value={telefono}
                         onChange={(e) => setTelefono(e.target.value)}
                         placeholder="11 5555 5555"
+                        type="tel"
                         inputMode="tel"
+                        autoComplete="tel"
                         className="h-11"
                         required
                       />
                     </div>
                   </div>
 
-                  {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+                  {error ? (
+                    <p role="alert" className="mt-4 text-sm text-destructive">
+                      {error}
+                    </p>
+                  ) : null}
 
                   <div className="mt-6 flex items-center justify-between">
                     <Button type="button" variant="ghost" onClick={() => setStep(1)}>

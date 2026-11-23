@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import ServiceDialog from "@/components/admin/ServiceDialog";
 import { useMerchant } from "@/hooks/useMerchant";
-import { unwrapDb } from "@/lib/db.client";
+import { unwrapDb } from "@/lib/db-errors";
 import { formatMoney } from "@/lib/format";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 export const Route = createFileRoute("/_authed/panel/servicios")({ component: ServicesPage });
 
@@ -22,7 +22,7 @@ function ServicesPage() {
   const [saving, setSaving] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
 
-  const { data: services = [], isLoading } = useQuery({
+  const { data: services = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["services", tenantId],
     queryFn: async () =>
       unwrapDb(
@@ -91,6 +91,13 @@ function ServicesPage() {
       {isLoading ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
           Cargando servicios…
+        </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-dashed border-destructive/40 px-5 py-10 text-center text-sm text-destructive">
+          No pudimos cargar los servicios ({error?.message}).{" "}
+          <button type="button" className="underline" onClick={() => refetch()}>
+            Reintentar
+          </button>
         </div>
       ) : services.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border px-5 py-12 text-center">

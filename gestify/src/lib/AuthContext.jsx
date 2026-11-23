@@ -1,8 +1,8 @@
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo } from "react";
-import { signOut } from "@/lib/auth.client";
+import { signOut } from "@/lib/auth-browser";
 import { currentPath } from "@/lib/authReturnTo";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 const isNoSession = (error) =>
   error?.name === "AuthSessionMissingError" || error?.status === 401 || error?.status === 403 || /session missing/i.test(error?.message ?? "");

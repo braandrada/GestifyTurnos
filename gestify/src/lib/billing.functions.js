@@ -61,8 +61,10 @@ export const syncSubscriptionPreapproval = createServerFn({ method: "POST" })
     const preapproval = await getPreapproval({ accessToken, preapprovalId: subscription.mp_preapproval_id });
     if (!preapproval) return { mp_estado: subscription.mp_estado || null };
 
+    // Solo se sincroniza el estado del débito. Autorizar NO es pagar: la cuenta se reactiva cuando llega un
+    // cobro aprobado (webhook) o cuando el super admin registra el pago. Así un comercio suspendido no se
+    // reactiva solo con autorizar el débito.
     const patch = { mp_estado: preapproval.status || "pending" };
-    if (preapproval.status === "authorized") patch.estado_suscripcion = "activa";
     unwrap(await db.from("tenant_subscriptions").update(patch).eq("id", subscription.id));
     return { mp_estado: patch.mp_estado };
   });
@@ -75,9 +77,10 @@ export const cancelSubscriptionPreapproval = createServerFn({ method: "POST" })
     const { db, subscription } = await resolveMerchant(context);
     if (!subscription.mp_preapproval_id) return { ok: true };
 
-    if (accessToken) {
-      await cancelPreapproval({ accessToken, preapprovalId: subscription.mp_preapproval_id }).catch(() => null);
-    }
+    if (!accessToken) throw new Error("La plataforma no tiene configurada su cuenta de Mercado Pago. Contactanos para cancelar.");
+    // Si Mercado Pago no confirma la cancelación, NO se marca como cancelada: el comercio seguiría siendo debitado.
+    const cancelled = await cancelPreapproval({ accessToken, preapprovalId: subscription.mp_preapproval_id }).catch(() => null);
+    if (!cancelled) throw new Error("Mercado Pago no confirmó la cancelación. Probá de nuevo en unos minutos.");
     unwrap(await db.from("tenant_subscriptions").update({ mp_estado: "cancelled" }).eq("id", subscription.id));
     return { ok: true };
   });

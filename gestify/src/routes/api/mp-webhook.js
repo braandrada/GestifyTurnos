@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { confirmAppointment } from "@/lib/appointments.server";
-import { getPayment } from "@/lib/mercadopago.server";
+import { getPayment, isValidDepositPayment } from "@/lib/mercadopago.server";
 import { supabaseAdmin } from "@/lib/supabase.server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -55,9 +55,9 @@ export const Route = createFileRoute("/api/mp-webhook")({
           // El turno tiene que ser del comercio cuyo token consultó el pago (evita confirmar turnos ajenos).
           if (appointment.tenant_id !== tenantId) return Response.json({ ok: true, ignored: "otro_comercio" });
 
-          // La seña pagada debe cubrir el monto acordado.
-          if (Number(payment.transaction_amount) + 0.001 < Number(appointment.monto_sena)) {
-            return Response.json({ ok: true, ignored: "monto_insuficiente" });
+          // Aprobado, en pesos y con monto que cubra la seña (misma regla que la pantalla /pago/:codigo).
+          if (!isValidDepositPayment(payment, appointment)) {
+            return Response.json({ ok: true, ignored: "pago_no_valido" });
           }
 
           const result = await confirmAppointment({ appointment, paymentId: payment.id });

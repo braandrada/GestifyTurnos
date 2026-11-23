@@ -5,8 +5,8 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { updatePassword } from "@/lib/auth.client";
-import { getSupabase } from "@/lib/supabase.client";
+import { updatePassword } from "@/lib/auth-browser";
+import { getSupabase } from "@/lib/supabase-browser";
 
 const MIN_PASSWORD = 8;
 

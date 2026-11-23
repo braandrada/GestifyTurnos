@@ -1,4 +1,5 @@
 import pluginJs from "@eslint/js";
+import pluginReact from "eslint-plugin-react";
 import pluginReactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
@@ -13,9 +14,12 @@ export default [
       globals: { ...globals.browser, ...globals.node },
       parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
     },
-    plugins: { "react-hooks": pluginReactHooks },
+    plugins: { react: pluginReact, "react-hooks": pluginReactHooks },
     rules: {
+      // Sin esta regla, no-unused-vars marca como "sin usar" todo componente que solo aparece en JSX.
+      "react/jsx-uses-vars": "error",
       "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },

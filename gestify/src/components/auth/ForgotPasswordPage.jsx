@@ -4,7 +4,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { requestPasswordReset } from "@/lib/auth.client";
+import { requestPasswordReset } from "@/lib/auth-browser";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 // Página /forgot-password. Siempre termina con el mismo mensaje: no revelamos si el email tiene cuenta.

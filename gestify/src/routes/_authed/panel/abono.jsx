@@ -4,9 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMerchant } from "@/hooks/useMerchant";
 import SubscriptionBanner from "@/components/admin/SubscriptionBanner";
 import AutoDebitCard from "@/components/admin/AutoDebitCard";
-import { unwrapDb } from "@/lib/db.client";
+import { unwrapDb } from "@/lib/db-errors";
 import { formatDate, formatMoney } from "@/lib/format";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 export const Route = createFileRoute("/_authed/panel/abono")({ component: AbonoPage });
 
@@ -22,7 +22,7 @@ function AbonoPage() {
     [queryClient],
   );
 
-  const { data: pagos = [], isLoading } = useQuery({
+  const { data: pagos = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["subscription-payments", tenantId],
     queryFn: async () =>
       unwrapDb(
@@ -60,7 +60,14 @@ function AbonoPage() {
           <div className="rounded-2xl border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
             Cargando cobros…
           </div>
-        ) : pagos.length ? (
+        ) : isError ? (
+        <div className="rounded-2xl border border-dashed border-destructive/40 px-5 py-10 text-center text-sm text-destructive">
+          No pudimos cargar los cobros ({error?.message}).{" "}
+          <button type="button" className="underline" onClick={() => refetch()}>
+            Reintentar
+          </button>
+        </div>
+      ) : pagos.length ? (
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="divide-y divide-border">
               {pagos.map((pago) => (

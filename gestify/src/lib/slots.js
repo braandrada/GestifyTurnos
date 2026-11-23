@@ -35,27 +35,42 @@ export function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
-/** Intervalos ocupados por turnos que bloquean la agenda */
-export function busyIntervals(appointments, now = new Date()) {
-  return appointments
+/**
+ * Intervalos ocupados: turnos vivos + bloqueos manuales del comercio.
+ * Misma regla que la base (public_get_busy_slots): un pendiente sin vencimiento cargado ocupa el horario.
+ */
+export function busyIntervals(appointments, now = new Date(), blocks = []) {
+  const fromAppointments = appointments
     .filter((appointment) => {
       if (appointment.estado === "confirmado") return true;
       if (appointment.estado !== "pendiente_pago") return false;
-      return appointment.expira_pago_en && new Date(appointment.expira_pago_en) > now;
+      return !appointment.expira_pago_en || new Date(appointment.expira_pago_en) > now;
     })
     .map((appointment) => ({
       start: new Date(appointment.fecha_hora_inicio),
       end: new Date(appointment.fecha_hora_fin),
     }));
+  const fromBlocks = blocks.map((block) => ({ start: new Date(block.inicio), end: new Date(block.fin) }));
+  return [...fromAppointments, ...fromBlocks];
 }
 
 /**
- * Cruza los horarios del día con los turnos existentes y devuelve los inicios libres.
+ * Cada cuántos minutos se ofrece un inicio de turno. Servicios cortos avanzan de a su duración;
+ * los largos, de a 30 min (si no, uno de 90 min solo ofrecería 9:00, 10:30, 12:00…).
  */
-export function buildSlots({ dateKey, durationMinutes, schedules, appointments, now = new Date() }) {
+export function slotStepMinutes(durationMinutes) {
+  return Math.min(Number(durationMinutes) || 30, 30);
+}
+
+/**
+ * Cruza los horarios del día con los turnos y bloqueos existentes y devuelve los inicios libres.
+ * `minStart`: no se ofrecen turnos que empiecen antes (anticipación mínima).
+ */
+export function buildSlots({ dateKey, durationMinutes, schedules, appointments, blocks = [], now = new Date(), minStart = now }) {
   const weekday = weekdayOf(dateKey);
-  const busy = busyIntervals(appointments, now);
+  const busy = busyIntervals(appointments, now, blocks);
   const duration = Number(durationMinutes) || 30;
+  const step = slotStepMinutes(duration);
   const slots = [];
 
   schedules
@@ -63,10 +78,10 @@ export function buildSlots({ dateKey, durationMinutes, schedules, appointments, 
     .forEach((schedule) => {
       const dayStart = toInstant(dateKey, schedule.hora_inicio);
       const dayEnd = toInstant(dateKey, schedule.hora_fin);
-      for (let start = dayStart.getTime(); start + duration * 60000 <= dayEnd.getTime(); start += duration * 60000) {
+      for (let start = dayStart.getTime(); start + duration * 60000 <= dayEnd.getTime(); start += step * 60000) {
         const slotStart = new Date(start);
         const slotEnd = new Date(start + duration * 60000);
-        if (slotStart <= now) continue;
+        if (slotStart <= now || slotStart < minStart) continue;
         const taken = busy.some((interval) => overlaps(slotStart, slotEnd, interval.start, interval.end));
         if (taken) continue;
         slots.push({ start: slotStart.toISOString(), label: timeKeyOf(slotStart) });
@@ -75,4 +90,55 @@ export function buildSlots({ dateKey, durationMinutes, schedules, appointments, 
 
   const unique = new Map(slots.map((slot) => [slot.start, slot]));
   return [...unique.values()].sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/**
+ * Disponibilidad con profesionales.
+ *
+ *  - `usesStaff` false (comercio sin profesionales): igual que siempre, horarios del local y todos los turnos.
+ *  - `usesStaff` true: se calcula por profesional elegible y se unen los resultados. Cada slot trae `staffIds`
+ *    con los profesionales libres en ese horario (ordenados como `staff`).
+ *    · Horarios: las franjas propias del profesional; si no tiene ninguna activa, las del local.
+ *    · Turnos: los suyos + los "del local" (sin profesional), que por prudencia bloquean a todos.
+ *    · Bloqueos: los del local entero + los suyos.
+ *  - `staffId`: limita a ese profesional (si no es elegible, no hay slots).
+ */
+export function buildAvailability({
+  dateKey,
+  durationMinutes,
+  schedules,
+  appointments,
+  blocks = [],
+  usesStaff = false,
+  staff = [],
+  staffId = null,
+  now = new Date(),
+  minStart = now,
+}) {
+  const base = { dateKey, durationMinutes, now, minStart };
+  const localSchedules = schedules.filter((schedule) => !schedule.staff_id);
+
+  if (!usesStaff) {
+    return buildSlots({ ...base, schedules: localSchedules, appointments, blocks }).map((slot) => ({ ...slot, staffIds: [] }));
+  }
+
+  const candidates = staffId ? staff.filter((member) => member.id === staffId) : staff;
+  const byStart = new Map();
+
+  for (const member of candidates) {
+    const own = schedules.filter((schedule) => schedule.staff_id === member.id && schedule.activo !== false);
+    const memberSlots = buildSlots({
+      ...base,
+      schedules: own.length ? own : localSchedules,
+      appointments: appointments.filter((appointment) => !appointment.staff_id || appointment.staff_id === member.id),
+      blocks: blocks.filter((block) => !block.staff_id || block.staff_id === member.id),
+    });
+    for (const slot of memberSlots) {
+      const entry = byStart.get(slot.start) || { ...slot, staffIds: [] };
+      entry.staffIds.push(member.id);
+      byStart.set(slot.start, entry);
+    }
+  }
+
+  return [...byStart.values()].sort((a, b) => a.start.localeCompare(b.start));
 }

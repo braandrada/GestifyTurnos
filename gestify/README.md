@@ -8,13 +8,13 @@ y cobro del abono mensual por débito automático de Mercado Pago.
 ## Puesta en marcha
 
 ```bash
-npm install
-npm install nitro @supabase/supabase-js @supabase/ssr   # fija las versiones actuales
-cp .env.example .env                                      # y completá los valores
-npm run dev                                               # http://localhost:3000
+npm ci                 # instala exactamente lo de package-lock.json
+cp .env.example .env   # y completá los valores (APP_URL local: http://localhost:3000)
+npm run dev            # http://localhost:3000
+npm run lint && npm run build   # antes de cada deploy
 ```
 
-1. Supabase > SQL Editor: correr `supabase/migrations/001_...sql` y después `002_...sql`.
+1. Supabase > SQL Editor: correr en orden `supabase/migrations/001_...sql`, `002_...`, `003_...`, `004_...` y `005_...`.
 2. Registrarte y volverte super admin: `update public.profiles set tipo_usuario = 'super_admin' where email = 'TU_EMAIL';`
 3. Cargar las variables de `.env.example` en Vercel (Settings > Environment Variables) y desplegar desde GitHub.
 

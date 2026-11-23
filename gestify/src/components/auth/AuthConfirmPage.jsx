@@ -2,9 +2,9 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthLink } from "@/components/auth/parts";
-import { authMessage } from "@/lib/auth.client";
+import { authMessage } from "@/lib/auth-browser";
 import { sanitizeReturnTo } from "@/lib/authReturnTo";
-import { getSupabase } from "@/lib/supabase.client";
+import { getSupabase } from "@/lib/supabase-browser";
 
 // Tipos de link de email que aceptamos. Cada uno llega con ?token_hash=...
 const EMAIL_LINK_TYPES = new Set(["recovery", "invite"]);

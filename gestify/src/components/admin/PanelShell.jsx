@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { CalendarDays, Clock, LogOut, PlugZap, Scissors, Wallet } from "lucide-react";
+import { CalendarDays, Clock, LogOut, PlugZap, Scissors, Users, Wallet } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { Wordmark } from "@/components/marketing/MarketingNav";
 import { formatDate } from "@/lib/format";
@@ -8,6 +8,7 @@ import { LayoutGrid } from "lucide-react";
 const NAV = [
   { to: "/panel", label: "Agenda", icon: CalendarDays },
   { to: "/panel/servicios", label: "Servicios", icon: Scissors },
+  { to: "/panel/profesionales", label: "Profesionales", icon: Users },
   { to: "/panel/horarios", label: "Horarios", icon: Clock },
   { to: "/panel/integraciones", label: "Integraciones", icon: PlugZap },
   { to: "/panel/abono", label: "Mi abono", icon: Wallet },

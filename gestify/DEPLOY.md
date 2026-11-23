@@ -7,7 +7,8 @@
 - Cuentas necesarias: GitHub, Vercel, Supabase, Mercado Pago (aplicación en "Tus integraciones") y un proveedor de correo para el SMTP.
 
 ## 1. Supabase
-1. Proyecto nuevo (o de prueba). Correr en **SQL Editor**, en orden: `supabase/migrations/001_...`, `002_...` y `003_...`.
+1. Proyecto nuevo (o de prueba). Correr en **SQL Editor**, en orden: `supabase/migrations/001_...`, `002_...`, `003_...`, `004_...` y `005_...`
+   (la 004 agrega bloqueos de agenda y protege el slug; la 005, profesionales. Corré solo las que te falten, en orden).
 2. **Project Settings > API**: copiar la URL, la clave pública (anon/publishable) y la `service_role` (secreta).
 3. Configurar **Auth** según `MIGRATION.md` (plantillas, Google, SMTP propio, TOTP). Las *Redirect URLs* se completan en el paso 4, cuando ya sepas tu dominio.
 
@@ -17,13 +18,16 @@ git init
 git add .
 git commit -m "Gestify Turnos: migración a Supabase y Vercel"
 git branch -M main
-git remote add origin https://github.com/TU-USUARIO/gestify-turnos.git
+git remote add origin https://github.com/braandrada/GestifyTurnos.git
 git push -u origin main
 ```
-El `.gitignore` ya excluye `.env`: confirmá con `git status` que no aparece antes de hacer el commit.
+El `.gitignore` (dentro de `gestify/`) excluye `.env` y `node_modules`: confirmá con `git status` que no aparecen antes de hacer el commit.
+Si alguna vez se subió un `.env` con claves reales, **rotalas** (Supabase > Project Settings > API, y los tokens de Mercado Pago):
+borrar el archivo del repo no las borra del historial de GitHub.
 
 ## 3. Vercel
-1. *Add New > Project* → importar el repositorio. Vercel detecta TanStack Start; no hace falta `vercel.json`.
+1. *Add New > Project* → importar el repositorio. **Root Directory: `gestify`** (la app está en esa subcarpeta del repo).
+   Vercel detecta TanStack Start; no hace falta `vercel.json`. Instala con `npm ci` usando `package-lock.json`.
    (No agregues `crons` en `vercel.json` si estás en Hobby: el deploy falla.)
 2. **Settings > Environment Variables** (Production y Preview), cargar todo lo de `.env.example`:
 
@@ -32,7 +36,7 @@ El `.gitignore` ya excluye `.env`: confirmá con `git status` que no aparece ant
 | `VITE_SUPABASE_URL` | URL del proyecto de Supabase |
 | `VITE_SUPABASE_ANON_KEY` | clave pública (anon / publishable) |
 | `SUPABASE_SERVICE_ROLE_KEY` | clave secreta `service_role` (sin prefijo `VITE_`) |
-| `APP_URL` | dominio final, sin barra: `https://TU-DOMINIO` |
+| `APP_URL` | dominio final **con** `https://` y sin barra final: `https://TU-DOMINIO` |
 | `PLATFORM_MP_ACCESS_TOKEN` | access token de producción de TU cuenta de Mercado Pago |
 | `MP_WEBHOOK_SECRET` | clave secreta de Webhooks de tu aplicación (paso 5) |
 | `MP_WEBHOOK_STRICT` | `false` al principio |

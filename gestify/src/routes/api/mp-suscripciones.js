@@ -4,10 +4,15 @@ import { getAuthorizedPayment, getPreapproval } from "@/lib/mercadopago.server";
 import { verifyMpSignature } from "@/lib/mp-signature.server";
 import { supabaseAdmin } from "@/lib/supabase.server";
 
+// Suma un mes calendario sin desbordar: 31/01 → 28/02 (no 03/03).
 function addOneMonth(iso) {
   const now = new Date();
   const base = iso && new Date(iso) > now ? new Date(iso) : now;
+  const day = base.getUTCDate();
+  base.setUTCDate(1);
   base.setUTCMonth(base.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
+  base.setUTCDate(Math.min(day, lastDay));
   return base.toISOString();
 }
 
@@ -51,8 +56,8 @@ export const Route = createFileRoute("/api/mp-suscripciones")({
             const preapproval = await getPreapproval({ accessToken, preapprovalId: id });
             if (!preapproval) return Response.json({ ok: true, ignored: "sin_preapproval" });
 
+            // Autorizar el débito no es pagar: estado_suscripcion lo cambia el cobro aprobado (más abajo).
             const patch = { mp_estado: preapproval.status || "pending" };
-            if (preapproval.status === "authorized") patch.estado_suscripcion = "activa";
             const { data, error } = await db
               .from("tenant_subscriptions")
               .update(patch)
