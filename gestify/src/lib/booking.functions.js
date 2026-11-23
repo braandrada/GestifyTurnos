@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { appOrigin } from "@/lib/app-url.server";
 import { requireUser } from "@/lib/auth-middleware";
-import { confirmAppointment, manageText } from "@/lib/appointments.server";
+import { confirmAppointment, manageText, newBookingText, notifyMerchant } from "@/lib/appointments.server";
 import { formatDateTime } from "@/lib/format";
 import { createPreference, findApprovedPayment } from "@/lib/mercadopago.server";
 import { toWhatsAppNumber } from "@/lib/phone";
@@ -342,6 +342,7 @@ export const createBooking = createServerFn({ method: "POST" })
           appointment.fecha_hora_inicio,
         )}. Te esperamos en ${tenant.direccion || "el local"}.${manageText(appointment.codigo_publico)}`,
       );
+      await notifyMerchant(tenant, newBookingText(appointment));
       return { codigo, requierePago: false, initPoint: null };
     }
 
@@ -443,11 +444,6 @@ function assertChangeable(appointment) {
   if (!canChange(appointment)) {
     throw new Error(`Los cambios se pueden hacer hasta ${CHANGE_DEADLINE_HOURS} horas antes. Escribile al local por WhatsApp.`);
   }
-}
-
-// Aviso al comercio por su propio WhatsApp (si tiene el envío configurado). Nunca falla.
-async function notifyMerchant(tenant, text) {
-  if (tenant.telefono_whatsapp) await sendWhatsAppMessage(tenant.id, tenant.telefono_whatsapp, text).catch(() => null);
 }
 
 export const cancelBooking = createServerFn({ method: "POST" })
