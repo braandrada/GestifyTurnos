@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
-import { platformToken } from "@/lib/billing.server";
+import { platformDefaults, platformToken } from "@/lib/billing.server";
 import { getMpUser } from "@/lib/mercadopago.server";
 import { assertSafeWebhookUrl } from "@/lib/safe-url.server";
 import { toWhatsAppNumber } from "@/lib/phone";
@@ -163,9 +163,6 @@ export const saveIntegration = createServerFn({ method: "POST" })
     return { ok: true, integration: integrationStatus(saved) };
   });
 
-// Período de prueba del autoregistro y precio inicial del abono (lo puede cambiar el super admin después).
-const trialDays = () => Math.min(Math.max(Number(process.env.TRIAL_DAYS) || 14, 1), 90);
-const defaultMonthlyPrice = () => Math.max(Number(process.env.DEFAULT_MONTHLY_PRICE) || 0, 0);
 
 /**
  * Autoregistro: un usuario con email confirmado y sin comercio crea el suyo, con período de prueba.
@@ -193,6 +190,8 @@ export const createOwnTenant = createServerFn({ method: "POST" })
 
     const { slug, error: slugError } = checkSlug(data.slug || data.nombre_comercio);
     if (slugError) throw new Error(slugError);
+    // Precio del abono y días de prueba: los define el super admin (platform_settings).
+    const { precio_mensual_default: precioDefault, dias_prueba: diasPrueba } = await platformDefaults();
 
     let telefono = "";
     if (data.telefono_whatsapp) {
@@ -213,7 +212,7 @@ export const createOwnTenant = createServerFn({ method: "POST" })
         owner_id: user.id,
         owner_email: user.email,
         activo: true,
-        notas: `Autoregistro de ${user.email} (prueba de ${trialDays()} días)`,
+        notas: `Autoregistro de ${user.email} (prueba de ${diasPrueba} días)`,
       })
       .select("*")
       .single();
@@ -228,9 +227,9 @@ export const createOwnTenant = createServerFn({ method: "POST" })
       unwrap(
         await db.from("tenant_subscriptions").insert({
           tenant_id: tenant.id,
-          precio_mensual: defaultMonthlyPrice(),
+          precio_mensual: precioDefault,
           estado_suscripcion: "activa",
-          fecha_vencimiento_actual: new Date(Date.now() + trialDays() * 86400000).toISOString(),
+          fecha_vencimiento_actual: new Date(Date.now() + diasPrueba * 86400000).toISOString(),
         }),
       );
       unwrap(await db.from("tenant_integrations").insert({ tenant_id: tenant.id, whatsapp_activo: true }));
@@ -247,5 +246,5 @@ export const createOwnTenant = createServerFn({ method: "POST" })
       throw dbFail(error?.cause || error, "No pudimos crear tu comercio. Probá de nuevo.");
     }
 
-    return { ok: true, slug: tenant.slug, dias_prueba: trialDays() };
+    return { ok: true, slug: tenant.slug, dias_prueba: diasPrueba };
   });

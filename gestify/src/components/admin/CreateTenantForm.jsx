@@ -54,7 +54,7 @@ export default function CreateTenantForm() {
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="ct-nombre">Nombre del local</Label>
-            <Input id="ct-nombre" required minLength={2} maxLength={120} value={form.nombre_comercio} onChange={set("nombre_comercio")} placeholder="Barbería Don Pepe" autoFocus />
+            <Input id="ct-nombre" required minLength={2} maxLength={120} value={form.nombre_comercio} onChange={set("nombre_comercio")} placeholder="Nombre de tu comercio" autoFocus />
           </div>
 
           <div className="space-y-1.5">
@@ -89,7 +89,7 @@ export default function CreateTenantForm() {
                 }}
                 onBlur={() => setForm((current) => ({ ...current, slug: slugify(slug) }))}
                 className="h-10 min-w-0 flex-1 bg-transparent pr-3 outline-none"
-                placeholder="barberia-don-pepe"
+                placeholder="nombre-de-tu-comercio"
               />
             </div>
             <p className="text-xs text-muted-foreground">Es el link que vas a compartir con tus clientes. Solo letras, números y guiones.</p>
@@ -102,7 +102,7 @@ export default function CreateTenantForm() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ct-direccion">Dirección (opcional)</Label>
-              <Input id="ct-direccion" maxLength={200} value={form.direccion} onChange={set("direccion")} placeholder="Av. Siempreviva 742" />
+              <Input id="ct-direccion" maxLength={200} value={form.direccion} onChange={set("direccion")} placeholder="Tu dirección completa" />
             </div>
           </div>
 
