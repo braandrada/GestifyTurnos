@@ -11,7 +11,8 @@ y cobro del abono mensual por débito automático de Mercado Pago.
 npm ci                 # instala exactamente lo de package-lock.json
 cp .env.example .env   # y completá los valores (APP_URL local: http://localhost:3000)
 npm run dev            # http://localhost:3000
-npm run lint && npm run build   # antes de cada deploy
+npm test               # tests (Vitest); npm run test:watch mientras programás
+npm run lint && npm run build   # antes de cada deploy (GitHub Actions lo corre en cada PR)
 ```
 
 1. Supabase > SQL Editor: correr en orden `supabase/migrations/001_...sql`, `002_...`, `003_...`, `004_...` y `005_...`.

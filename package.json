@@ -1,0 +1,13 @@
+{
+  "name": "gestify-turnos-repo",
+  "private": true,
+  "description": "Atajos: la app está en ./gestify. Estos scripts la ejecutan desde la raíz del repo.",
+  "scripts": {
+    "dev": "npm --prefix gestify run dev",
+    "build": "npm --prefix gestify run build",
+    "lint": "npm --prefix gestify run lint",
+    "test": "npm --prefix gestify run test",
+    "preview": "npm --prefix gestify run preview",
+    "setup": "npm --prefix gestify ci"
+  }
+}
